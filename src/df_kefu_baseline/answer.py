@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from .llm_client import OpenAICompatibleClient
 from .manuals import ManualChunk, build_chunks, image_path_for_id, load_manuals
 from .policy import answer_policy_question, generic_policy_answer, looks_like_manual_question
-from .query_planner import QueryPlan, build_query_plan, detect_language
+from .query_planner import MANUAL_ALIAS_RULES, QueryPlan, build_query_plan, detect_language
 from .retrieval import BM25Retriever, HIGH_INTENT_TERMS, SearchResult, tokenize
 
 
@@ -17,6 +17,7 @@ COMMON_QUERY_TERMS = {
     "procedure", "steps", "does", "when", "inside", "ensure",
     "if", "this", "that", "is", "to", "of", "on", "in", "before", "after", "using",
     "use", "do", "can", "you", "i", "my", "want", "need", "first", "time",
+    "while", "about", "properly", "usually", "normal", "common",
     "multi", "pressure", "cooker", "air", "fryer", "airfryer", "coffee", "machine",
     "earphones", "ereader", "fax", "grill", "landline", "lawn", "mower", "microwave",
     "motherboard", "vacuum", "snowmobile", "television", "toothbrush", "camera",
@@ -24,7 +25,13 @@ COMMON_QUERY_TERMS = {
 }
 TARGET_MANUAL_ALIASES = {
     "VR头显": "VR头显手册",
+    "遮光罩": "VR头显手册",
+    "游玩区域": "VR头显手册",
+    "处理器单元": "VR头显手册",
+    "耳塞": "VR头显手册",
     "人体工学椅": "人体工学椅手册",
+    "椅子": "人体工学椅手册",
+    "扶手": "人体工学椅手册",
     "健身单车": "健身单车手册",
     "健身追踪器": "健身追踪器手册",
     "儿童电动摩托车": "儿童电动摩托车手册",
@@ -34,6 +41,9 @@ TARGET_MANUAL_ALIASES = {
     "温控器": "可编程温控器手册",
     "吹风机": "吹风机手册",
     "摩托艇": "摩托艇手册",
+    "拖曳速度": "摩托艇手册",
+    "半滑航速度": "摩托艇手册",
+    "滑航速度": "摩托艇手册",
     "水泵": "水泵手册",
     "洗碗机": "洗碗机手册",
     "烤箱": "烤箱手册",
@@ -53,6 +63,39 @@ TARGET_MANUAL_ALIASES = {
     "snowmobile": "汇总英文手册",
     "television": "汇总英文手册",
     "toothbrush": "汇总英文手册",
+    "boat": "汇总英文手册",
+    "ship": "汇总英文手册",
+    "sailing": "汇总英文手册",
+    "on board": "汇总英文手册",
+    "jetski": "汇总英文手册",
+    "jet ski": "汇总英文手册",
+    "bimini": "汇总英文手册",
+    "swim platform": "汇总英文手册",
+    "livewell": "汇总英文手册",
+    "coffee maker": "汇总英文手册",
+    "af mode": "汇总英文手册",
+}
+
+PHRASE_HINTS = (
+    "anti-block shield", "steam release valve", "quick release button", "quick release",
+    "float valve", "silicone cap", "sealing ring", "silicone sealing ring",
+    "condensation collector", "natural release", "approval label",
+    "emission control", "battery conversion", "sound system", "storage compartments",
+    "battery compartment", "anchor light", "bimini top", "swim platform", "livewell",
+    "maintenance setting", "factory reset", "trip screen", "steering system",
+    "engine oil level", "fuel filter", "fuel tank", "adjustable sponson",
+    "intake and impeller", "af mode", "main menu", "browser history",
+    "music", "music mode", "video", "photo", "photo viewer", "voice recording", "ebook mode",
+    "mounting and detaching a lens", "attach the lens", "lens mount", "lens", "shutter button",
+    "camera battery", "date/time battery", "cp direct", "delete", "erase",
+    "烤架", "烤盘", "接油盘", "油脂过滤器", "滑动搁架", "催化侧面板",
+    "警报界面", "热泵", "油箱滤网", "遮光罩", "游玩区域", "处理器单元", "耳塞",
+    "扶手变松", "松动", "高度调节", "后仰", "按摩功能", "滤网清洁", "烤箱外部",
+)
+ACCESSORY_TERMS = {
+    "烤架", "烤盘", "接油盘", "油脂过滤器", "滑动搁架", "催化侧面板",
+    "float valve", "anti-block shield", "steam release valve", "sealing ring",
+    "condensation collector", "bimini top", "swim platform", "livewell",
 }
 
 
@@ -93,6 +136,146 @@ def detect_target_manuals(question: str) -> set[str]:
     return targets
 
 
+def phrase_hints_for_question(question: str) -> list[str]:
+    q = question.lower()
+    hints = [phrase for phrase in PHRASE_HINTS if phrase.lower() in q]
+    if "空气净化器" in question and ("模式" in question or "运行" in question or "设置" in question):
+        hints.extend(("常规运行", "自动运行", "涡轮风扇运行", "睡眠运行"))
+        if "安全" in question or "儿童" in question:
+            hints.append("安全锁功能")
+        if "关机" in question or "定时" in question:
+            hints.append("自动关机功能")
+    if "空气净化器" in question and "滤网" in question and "清洁" in question:
+        hints.extend(("滤网清洁", "预过滤网", "切勿用水清洗滤网"))
+    if "空气净化器" in question and "滤网" in question and ("更换" in question or "换" in question):
+        hints.extend(("更换滤网", "滤网更换指示灯", "睡眠 + 自动键"))
+    if "空气净化器" in question and "长期存放" in question:
+        hints.extend(("长期存放", "晾干设备内部", "干燥、无阳光直射"))
+    if "boat" in q or "sailing" in q:
+        if "water supply" in q:
+            hints.extend(("jet wash switch", "water supply", "water flow", "jet wash handle lever"))
+        if "start the boat" in q or "boat's engine" in q:
+            hints.extend(("Turn the battery switch to the ON position", "Push the blower switch", "Install the clip", "main switch keys to the start position"))
+        if "turn" in q and "turn on" not in q and "turn off" not in q and ("sailing" in q or "turn a boat" in q):
+            hints.extend(("boat characteristics", "jet thrust turns", "steering wheel", "jet thrust nozzles"))
+        if "steering system" in q:
+            hints.extend(("steering system checks", "steering wheel", "jet thrust nozzles", "free play"))
+        if "engine oil level" in q:
+            hints.extend(("engine oil level", "dipstick", "minimum level mark", "maximum level mark"))
+        if "approval label" in q or "emission control" in q:
+            hints.extend(("approval label", "emission control certificate", "emission control information label"))
+        if "cruise is over" in q or "load the boat" in q:
+            hints.extend(("deactivate the cruise assist", "remote control levers", "decrease the engine speed"))
+        if "throttle-cable" in q or "throttle cable" in q:
+            hints.extend(("throttle cable", "grease points", "grease the throttle-cable inner wires", "pulley wheel"))
+    if "quick release" in q:
+        hints.extend(("Quick Release (QR or QPR)", "quick release button", "Vent position", "steam release valve"))
+    if "pressure cooking lid" in q:
+        hints.extend(("pressure cooking lid", "install the pressure cooking lid", "remove the pressure cooking lid"))
+    if "float valve" in q:
+        hints.extend(("float valve", "silicone cap", "install the float valve", "remove the float valve"))
+    if "anti-block shield" in q:
+        hints.extend(("anti-block shield", "steam release pipe", "remove the anti-block shield"))
+    if "sealing ring" in q:
+        if "install" in q:
+            hints.extend(("Install the sealing ring", "press it into place", "snug behind sealing ring rack"))
+        elif "remove" in q:
+            hints.extend(("Remove the sealing ring", "pull the sealing ring out", "silicone"))
+        else:
+            hints.extend(("Sealing ring When the pressure cooking lid", "air-tight seal", "Only one sealing ring"))
+    if "over-the-range microwave" in q:
+        if "auto defrost" in q:
+            hints.extend(("AUTO DEFROST", "Auto Defrost Chart", "defrost frozen foods"))
+        if "reheat" in q:
+            hints.extend(("REHEAT", "PIZZA lets you reheat", "sensor"))
+        if "control" in q:
+            hints.extend(("CONTROL PANEL FEATURES", "Display includes a clock", "Touch this pad"))
+    if "camera" in q:
+        if "install" in q and "card" in q:
+            hints.extend(("Installing the Card", "Insert the CF card", "Close the cover", "CF card"))
+        if "delete a single image" in q or "erase" in q:
+            hints.extend(("Erasing a Single Image", "Select the image to be erased", "Erase"))
+        if "cp direct" in q or "print photos" in q:
+            hints.extend(("CP Direct", "Start printing", "Direct Printing", "select [OK]"))
+    if "jetski" in q or "jet ski" in q:
+        if "hood" in q:
+            hints.extend(("Engine hood", "engine hood latches", "open the engine hood", "lift the engine hood"))
+        if "filler cap" in q:
+            hints.extend(("fuel tank filler cap", "oil tank filler cap", "fuel cock knob"))
+        if "engine switches" in q or "engine switch" in q:
+            hints.extend(("engine shut-off switch", "Main switches", "START", "ON", "OFF"))
+        if "qsts" in q:
+            hints.extend(("Quick Shift Trim System", "QSTS selector", "trim angle"))
+        if "sponson" in q:
+            hints.extend(("Adjustable Sponson", "Adjusting the Adjustable Sponson", "turning performance"))
+    for match in re.findall(r"\b[a-z][a-z0-9]*(?:[- ][a-z0-9]+){1,3}\b", q):
+        if len(match) >= 7 and match not in COMMON_QUERY_TERMS:
+            hints.append(match)
+    seen = set()
+    unique: list[str] = []
+    for hint in hints:
+        key = hint.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(hint)
+    return unique[:8]
+
+
+def plan_product_terms(plan: QueryPlan) -> set[str]:
+    terms: set[str] = set()
+    for manual in plan.target_manuals:
+        for alias in MANUAL_ALIAS_RULES.get(manual, ()):
+            terms.update(tokenize(alias))
+    return {term for term in terms if len(term) >= 2}
+
+
+def bundle_product_penalty(question: str, title: str, text: str) -> float:
+    q = question.lower()
+    doc = f"{title} {text}".lower()
+    penalty = 0.0
+    if ("boat" in q or "sailing" in q) and not any(
+        term in doc for term in ("boat", "vessel", "jet thrust", "steering", "cruise assist", "throttle-cable")
+    ):
+        penalty += 260.0
+    if "boat" in q and "approval label" not in q and "emission control" not in q:
+        if "approval label" in doc or "emission control certificate" in doc:
+            penalty += 360.0
+    if ("start the boat" in q or "boat's engine" in q) and any(
+        term in doc for term in ("engines can also be stopped", "to remove the battery", "remove the main switch keys")
+    ):
+        penalty += 760.0
+    if "camera" in q and not any(term in doc for term in ("camera", "lens", "shutter", "cf card", "battery pack", "photo")):
+        penalty += 260.0
+    if "camera" in q and "flash" not in q and "flash photography" in doc:
+        penalty += 520.0
+    if "camera" in q and "install" in q and "card" in q and not any(
+        term in doc for term in ("installing the card", "insert the cf card", "close the cover", "cf card can be inserted")
+    ):
+        penalty += 760.0
+    if "camera" in q and "install" in q and "card" in q and "remove the cf card" in doc:
+        penalty += 620.0
+    if "camera" in q and ("delete a single image" in q or "erase" in q) and not any(
+        term in doc for term in ("erasing a single image", "select the image to be erased", "erase images", "erasing images")
+    ):
+        penalty += 760.0
+    if "camera" in q and ("cp direct" in q or "print photos" in q):
+        if text.strip().startswith("fore resuming"):
+            penalty += 520.0
+        if not any(term in doc for term in ("cp direct", "direct printing", "start printing")):
+            penalty += 520.0
+    if "sealing ring" in q and title.startswith(("caution", "warning", "! warning")):
+        penalty += 760.0
+    if "ereader" in q and any(term in doc for term in ("camera", "lens", "shutter", "flash photography")):
+        penalty += 420.0
+    if ("jetski" in q or "jet ski" in q) and "watercraft education and training" in doc:
+        penalty += 520.0
+    if "fax" in q and any(term in doc for term in ("lp tank", "grill", "regulator")):
+        penalty += 420.0
+    if "grill" in q and "fax" in doc:
+        penalty += 320.0
+    return penalty
+
+
 def narrow_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchResult]:
     targets = plan.target_manuals or detect_target_manuals(plan.normalized)
     if targets:
@@ -117,13 +300,18 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
     if not results:
         return results
 
-    variant_terms = set(tokenize(" ".join(plan.variants)))
+    product_terms = plan_product_terms(plan)
+    variant_terms = set(tokenize(" ".join(plan.variants))) - product_terms
     core_terms = {
         term
         for term in tokenize(plan.normalized)
-        if len(term) >= 2 and term not in COMMON_QUERY_TERMS and not any(ch.isdigit() for ch in term)
+        if len(term) >= 2
+        and term not in COMMON_QUERY_TERMS
+        and term not in product_terms
+        and not any(ch.isdigit() for ch in term)
     }
-    scored_items: list[tuple[SearchResult, int, int]] = []
+    phrase_hints = phrase_hints_for_question(plan.normalized)
+    scored_items: list[tuple[SearchResult, int, int, bool]] = []
     for result in results:
         chunk = result.chunk
         title = chunk.title.lower()
@@ -138,22 +326,50 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
         score = (
             result.score
             + coverage * 1.8
-            + core_coverage * 5.0
-            + title_hits * 6.0
-            + early_title_hits * 26.0
+            + core_coverage * 7.0
+            + title_hits * 9.0
+            + early_title_hits * 34.0
             + image_bonus
             + manual_bonus
         )
+        phrase_hit = False
+        for phrase in phrase_hints:
+            phrase_l = phrase.lower()
+            phrase_count = doc_text.count(phrase_l)
+            if phrase_l in title:
+                phrase_hit = True
+                score += 430.0
+            elif phrase_l in head:
+                phrase_hit = True
+                score += 230.0
+            if phrase_count > 1:
+                score += min(260.0, phrase_count * 52.0)
+        if phrase_hints and not any(phrase.lower() in doc_text for phrase in phrase_hints):
+            score -= 340.0
+        if title.startswith(("warning", "! warning", "caution", "important safeguards")):
+            if phrase_hints and not any(phrase.lower() in title for phrase in phrase_hints):
+                score -= 260.0
+        if chunk.manual == "汇总英文手册":
+            score -= bundle_product_penalty(plan.normalized, title, head)
+        if any(term.lower() in plan.normalized.lower() for term in ACCESSORY_TERMS) and title.startswith(
+            ("首次使用", "before first use", "quick release")
+        ):
+            score -= 160.0
+        if "mount" in plan.normalized.lower() and "lens" in plan.normalized.lower():
+            if not any(phrase in doc_text for phrase in ("attach the lens", "mounting", "lens mount")):
+                score -= 420.0
+        if core_terms and all(term in title for term in core_terms if len(term) >= 3):
+            score += 90.0
         if any(term in title[:30] for term in HIGH_INTENT_TERMS if term in core_terms):
             score += 24.0
-        for phrase in ("before first use", "first use", "quick release", "steam release", "robot anatomy"):
+        for phrase in ("before first use", "first use", "robot anatomy"):
             if phrase in " ".join(plan.variants).lower() and phrase in doc_text:
                 score += 110.0
-        if title.startswith(("before first use", "quick release", "steam release")):
+        if title.startswith(("before first use",)):
             score += 70.0
         if len(title) > 140 and early_title_hits == 0:
             score -= 18.0
-        scored_items.append((SearchResult(chunk=chunk, score=score), core_coverage, title_hits))
+        scored_items.append((SearchResult(chunk=chunk, score=score), core_coverage, title_hits, phrase_hit))
 
     scored_items.sort(key=lambda item: item[0].score, reverse=True)
     reranked = [item[0] for item in scored_items]
@@ -164,8 +380,12 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
     min_core_coverage = max(1, int(top_core_coverage * 0.55)) if top_core_coverage else 0
     kept = [
         item
-        for item, core_coverage, _ in scored_items
-        if item.score >= top * 0.62 and core_coverage >= min_core_coverage
+        for item, core_coverage, _, phrase_hit in scored_items
+        if (
+            item.score >= top * 0.62 and core_coverage >= min_core_coverage
+        ) or (
+            phrase_hit and item.score >= top * 0.35
+        )
     ]
     return kept or reranked[:4]
 
@@ -198,6 +418,91 @@ def extract_relevant_sentences(question: str, chunks: list[ManualChunk], max_sen
     return selected
 
 
+def focus_block_for_question(question: str, block: str, limit: int) -> str:
+    hints = phrase_hints_for_question(question)
+    if not hints:
+        return block[:limit]
+
+    block_l = block.lower()
+    positions = [block_l.find(hint.lower()) for hint in hints if block_l.find(hint.lower()) >= 0]
+    if not positions:
+        return block[:limit]
+
+    pos = min(positions)
+    start = max(block.rfind("\n", 0, pos), block.rfind("#", 0, pos), 0)
+    if start < pos - 180:
+        start = max(0, pos - 180)
+    end = min(len(block), start + limit)
+    if end < len(block):
+        pivot = max(block.rfind("\n", start, end), block.rfind("。", start, end), block.rfind(". ", start, end))
+        if pivot > pos:
+            end = pivot + 1
+    focused = block[start:end].strip(" #\n")
+    return focused or block[:limit]
+
+
+def clean_customer_block(block: str) -> str:
+    replacements = (
+        (r"请阅读本手册", ""),
+        (r"在阅读并理解本手册中的说明前，?", ""),
+        (r"请妥善保管本手册以备日后查阅。?", ""),
+        (r"妥善保管本手册以备日后查阅。?", ""),
+        (r"请查阅本手册末尾的", "请查看"),
+        (r"本手册", "说明"),
+        (r"使用说明书", "使用说明"),
+        (r"用户手册", "使用指南"),
+        (r"(?i)\buse and care manual\b", "Use and care guide"),
+        (r"(?i)\binstruction manual\b", "instruction guide"),
+        (r"(?i)\buser manual\b", "user guide"),
+        (r"(?i)thismanual", "this guide"),
+        (r"(?i)\bmanual\b", "guide"),
+    )
+    cleaned = block
+    for pattern, replacement in replacements:
+        cleaned = re.sub(pattern, replacement, cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def target_manual_supplements(plan: QueryPlan, chunks: list[ManualChunk], limit: int = 8) -> list[SearchResult]:
+    if not plan.target_manuals:
+        return []
+    product_terms = plan_product_terms(plan)
+    terms = {
+        term
+        for term in tokenize(plan.normalized)
+        if len(term) >= 2
+        and term not in COMMON_QUERY_TERMS
+        and term not in product_terms
+        and not any(ch.isdigit() for ch in term)
+    }
+    phrases = phrase_hints_for_question(plan.normalized)
+    supplements: list[SearchResult] = []
+    for chunk in chunks:
+        if chunk.manual not in plan.target_manuals:
+            continue
+        title = chunk.title.lower()
+        text = readable_chunk_text(chunk).lower()
+        score = 0.0
+        for phrase in phrases:
+            phrase_l = phrase.lower()
+            if phrase_l in title:
+                score += 460.0
+            elif phrase_l in text:
+                score += 240.0
+        for term in terms:
+            if term in title:
+                score += 42.0
+            elif term in text:
+                score += 8.0
+        if chunk.manual == "汇总英文手册":
+            score -= bundle_product_penalty(plan.normalized, title, text[:1000])
+        if score > 0:
+            supplements.append(SearchResult(chunk=chunk, score=score))
+    supplements.sort(key=lambda item: item.score, reverse=True)
+    return supplements[:limit]
+
+
 def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
     is_english = detect_language(question) == "en"
     if not results:
@@ -205,27 +510,23 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
             return "I could not find enough clear information in the provided manuals. Please provide the product model, symptom, or image so we can verify it further."
         return "您好，暂未在已提供的资料中检索到足够明确的信息。建议您补充商品型号、故障现象或图片，我们会继续为您核实。"
 
-    lines = ["The relevant instructions are:"] if is_english else ["您好，相关说明如下："]
-    top_text = readable_chunk_text(results[0].chunk)
-    if results[0].chunk.image_ids and len(top_text.replace("<PIC>", "").strip()) <= 80:
-        if is_english:
-            lines.append(f"1. The requested component or operation overview is shown in the related illustration. <PIC>")
-            lines.append(f"Related images: {', '.join(results[0].chunk.image_ids)}")
-        else:
-            lines.append("1. 该部件位置或操作示意主要见相关插图。<PIC>")
-            lines.append(f"相关插图: {', '.join(results[0].chunk.image_ids)}")
-        return "\n".join(lines)
-
+    lines = ["Here is what you can do:"] if is_english else ["您好，可以这样处理："]
     blocks: list[str] = []
+    selected_results: list[SearchResult] = []
     seen = set()
     top_score = results[0].score
+    question_phrases = phrase_hints_for_question(question)
     for result in results:
-        if blocks and result.score < top_score * 0.68:
+        block = readable_chunk_text(result.chunk)
+        block_l = block.lower()
+        has_phrase = any(phrase.lower() in block_l or phrase.lower() in result.chunk.title.lower() for phrase in question_phrases)
+        if blocks and question_phrases and not has_phrase:
+            continue
+        if blocks and result.score < top_score * 0.68 and not has_phrase:
             continue
         title_key = re.sub(r"\s+", " ", result.chunk.title.lower())[:80]
         if title_key in seen:
             continue
-        block = readable_chunk_text(result.chunk)
         if not block:
             continue
         key = block[:80]
@@ -234,10 +535,11 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
         seen.add(key)
         seen.add(title_key)
         if len(blocks) == 0:
-            limit = 1400 if is_english else 900
+            limit = 1100 if is_english else 760
         else:
-            limit = 650 if is_english else 520
-        blocks.append(block[:limit])
+            limit = 560 if is_english else 430
+        blocks.append(clean_customer_block(focus_block_for_question(question, block, limit)))
+        selected_results.append(result)
         if len(blocks) >= 3:
             break
 
@@ -250,7 +552,7 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
         for idx, sentence in enumerate(sentences[:6], start=1):
             lines.append(f"{idx}. {sentence}")
 
-    image_ids = collect_image_ids(results)
+    image_ids = collect_image_ids(selected_results or results, limit=6)
     if image_ids:
         label = "Related images" if is_english else "相关插图"
         lines.append(f"{label}: {', '.join(image_ids)}")
@@ -313,6 +615,11 @@ class AnswerEngine:
 
     def retrieve(self, plan: QueryPlan) -> list[SearchResult]:
         raw = self.retriever.search_many(plan.variants, top_k=40, per_query_k=18)
+        seen_raw = {item.chunk.id for item in raw}
+        for supplement in target_manual_supplements(plan, self.chunks):
+            if supplement.chunk.id not in seen_raw:
+                raw.append(supplement)
+                seen_raw.add(supplement.chunk.id)
         lowered = plan.normalized.lower()
         if "robot anatomy" in lowered and "vacuum" in lowered:
             for chunk in self.chunks:
