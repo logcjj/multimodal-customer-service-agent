@@ -43,6 +43,19 @@ class RagQualityTests(unittest.TestCase):
         self.assertNotIn("rog_ext", combined)
         self.assertNotIn("usb 3.0 module", combined)
 
+    def test_landline_overview_and_status_behavior_routes_are_distinct(self):
+        overview = self.engine.answer("What is the overview of the base station of a landline?", qid=351)
+        led_status = self.engine.answer(
+            "How can you know about the current status with different LED indicator behavior on a landline?",
+            qid=356,
+        )
+
+        self.assertIn("Overview of the base station", overview)
+        self.assertNotIn("DC input jack", overview)
+        self.assertIn("Behavior of the LED indicator", led_status)
+        self.assertIn("current status", led_status)
+        self.assertNotIn("Loudspeaker Battery door", led_status)
+
     def test_earphones_components_query_does_not_retrieve_landline_troubleshooting(self):
         question = "After the earphones is in my hand, what are the components I should have?"
         answer = self.engine.answer(question, qid=296).lower()
@@ -80,6 +93,13 @@ class RagQualityTests(unittest.TestCase):
         self.assertIn("断开所有电气设备", answer)
         self.assertIn("燃油开关旋钮", answer)
         self.assertNotIn("保修", answer)
+
+    def test_generator_start_steps_do_not_route_to_cannot_start(self):
+        answer = self.engine.answer("启动发电机发动机的前两个步骤是什么？", qid=158)
+
+        self.assertIn("启动发动机前", answer)
+        self.assertIn("通气旋钮", answer)
+        self.assertNotIn("发动机无法启动", answer)
 
     def test_blower_focus_queries_return_distinct_blocks(self):
         answers = {
@@ -164,6 +184,15 @@ class RagQualityTests(unittest.TestCase):
         self.assertNotEqual(connect.strip(), "The relevant instructions are:\n1. Connect the base station")
         self.assertIn("Loosen the adjuster lock nut", throttle)
         self.assertNotEqual(throttle.strip(), "The relevant instructions are:\n1. THROTTLE CABLE ADJUSTMENT")
+
+    def test_vacuum_troubleshooting_extracts_troubleshooting_block(self):
+        answer = self.engine.answer(
+            "What are the troubleshooting steps if the vacuum indicates a problem?",
+            qid=412,
+        )
+
+        self.assertIn("troubleshooting indicator", answer.lower())
+        self.assertNotIn("CLEANING THE EXTRACTORS", answer)
 
 
 if __name__ == "__main__":

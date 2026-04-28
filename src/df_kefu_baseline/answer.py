@@ -27,6 +27,7 @@ COMMON_QUERY_TERMS = {
 }
 TARGET_MANUAL_ALIASES = {
     "VR头显": "VR头显手册",
+    "遮光罩": "VR头显手册",
     "人体工学椅": "人体工学椅手册",
     "健身单车": "健身单车手册",
     "健身追踪器": "健身追踪器手册",
@@ -80,6 +81,54 @@ FOCUS_STOP_PHRASES = {
     "建议",
     "发生",
 }
+GENERIC_TOOL_PHRASES = {
+    "部件",
+    "概览",
+    "清洁",
+    "安装",
+    "设置",
+    "故障",
+    "问题",
+    "步骤",
+    "components",
+    "cleaning",
+    "installation",
+    "settings",
+    "troubleshooting",
+}
+TOOL_PHRASE_QUESTION_RE = re.compile(
+    r"\b(?:what|how|can|you|know|about|using|after|before|current|different|proper|correct|"
+    r"procedure|steps|does|when|where|which)\b",
+    re.IGNORECASE,
+)
+OVERVIEW_TITLE_RE = re.compile(
+    r"^(?:overview|general description|what is in the box|what's in the box|components|"
+    r"steam release valve|anti-block shield|sealing ring|float valve|pressure cooking lid|"
+    r"概览|部件|部件说明|包装内容|组成|简介)\b",
+    re.IGNORECASE,
+)
+ACTION_TITLE_RE = re.compile(
+    r"^(?:install|remove|connect|charge|set|replace|clean|register|delete|erase|mount|"
+    r"activate|deactivate|select|start|stop|warning|caution|note|"
+    r"安装|拆卸|取下|连接|充电|设置|更换|清洁|注册|删除|选择|启动|停机|警告|注意)",
+    re.IGNORECASE,
+)
+PROCEDURE_TITLE_RE = re.compile(
+    r"^(?:install|remove|connect|charge|set|replace|clean|register|delete|erase|mount|"
+    r"activate|deactivate|select|start|stop|"
+    r"安装|拆卸|取下|连接|充电|设置|更换|清洁|注册|删除|选择|启动|停机)",
+    re.IGNORECASE,
+)
+ENGLISH_ACTION_RE = re.compile(
+    r"\b(?:install|remove|set|clean|cleaning|press|play|operate|procedure|steps|adjust|"
+    r"mount|delete|erase|print|care|check|connect|charge|start|stop|use|replace|select)\b",
+    re.IGNORECASE,
+)
+STATUS_BEHAVIOR_RE = re.compile(
+    r"\b(?:current status|status|behavior|behaviour|indicator behavior|events status|charge status)\b|"
+    r"状态|指示灯|行为",
+    re.IGNORECASE,
+)
 ENGLISH_FOCUS_PHRASES = (
     "browser history",
     "main menu",
@@ -89,6 +138,7 @@ ENGLISH_FOCUS_PHRASES = (
     "photo viewer",
     "trouble shooting",
     "troubleshooting",
+    "troublehsooting",
     "silicone cap",
     "float valve",
     "anti-block shield",
@@ -242,6 +292,8 @@ def focused_phrases_from_question(question: str) -> list[str]:
     for phrase in ENGLISH_FOCUS_PHRASES:
         if phrase in lower:
             phrases.append(phrase)
+    if "troubleshooting" in lower or "trouble shooting" in lower:
+        phrases.append("troublehsooting")
     seen = set()
     unique: list[str] = []
     for phrase in phrases:
@@ -251,6 +303,36 @@ def focused_phrases_from_question(question: str) -> list[str]:
         seen.add(key)
         unique.append(phrase)
     return unique[:3]
+
+
+def phrase_tool_candidates(plan: QueryPlan) -> list[str]:
+    phrases = list(focused_phrases_from_question(plan.normalized))
+    for variant in plan.variants[1:]:
+        item = variant.strip(" ？?。；;，,")
+        if not (2 <= len(item) <= 64):
+            continue
+        if len(re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", "", item)) < 3:
+            continue
+        if item == plan.normalized:
+            continue
+        if re.search(r"[？?]", item):
+            continue
+        if TOOL_PHRASE_QUESTION_RE.search(item) or re.search(r"如何|怎么|什么|哪些|正确|步骤|请问|告诉|介绍", item):
+            continue
+        words = re.findall(r"[A-Za-z0-9][A-Za-z0-9_\-/]*", item)
+        cjk_chars = re.findall(r"[\u4e00-\u9fff]", item)
+        if len(words) > 5 or len(cjk_chars) > 18:
+            continue
+        phrases.append(item)
+    seen = set()
+    unique: list[str] = []
+    for phrase in phrases:
+        key = re.sub(r"\s+", " ", phrase.lower()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique.append(phrase)
+    return unique[:8]
 
 
 def readable_text_from_raw(raw_text: str) -> str:
@@ -307,6 +389,14 @@ def focused_chunk_text(question: str, chunk: ManualChunk) -> tuple[str, tuple[st
     positions = [match.start() for match in re.finditer(re.escape(phrase_l), lowered)]
     if not positions:
         return None
+    if (
+        is_action_query(question)
+        and not is_troubleshooting_query(question)
+        and min(positions) > 260
+        and PROCEDURE_TITLE_RE.match(chunk.title.strip())
+        and ACTION_SIGNAL_RE.search(full_readable[:260])
+    ):
+        return full_readable[:700], chunk.image_ids
 
     def position_score(pos: int) -> tuple[int, int]:
         next_char = raw[pos + len(phrase) : pos + len(phrase) + 1]
@@ -378,10 +468,17 @@ def focused_chunk_text(question: str, chunk: ManualChunk) -> tuple[str, tuple[st
             marker_pos = raw.rfind(marker, max(0, pos - 220), pos + len(phrase))
             if marker_pos >= 0:
                 start = min(start, marker_pos)
+    has_previous_connect_marker = False
     for marker in ("Connect each end", "1 Connect each end", "2 Connect each end"):
         marker_pos = raw.rfind(marker, max(0, pos - 240), pos)
         if marker_pos >= 0:
             start = min(start, marker_pos)
+            has_previous_connect_marker = True
+    if not has_previous_connect_marker:
+        for marker in ("Connect each end", "1 Connect each end", "2 Connect each end"):
+            marker_pos = raw.find(marker, pos, min(len(raw), pos + 180))
+            if marker_pos >= 0:
+                start = marker_pos
     next_hash = raw.find("# ", after)
     if next_hash >= 0 and next_hash > after + 12:
         end = min(end, next_hash)
@@ -465,6 +562,43 @@ def is_component_overview_query(question: str) -> bool:
     )
 
 
+def is_action_query(question: str) -> bool:
+    lower = question.lower()
+    chinese_action = bool(
+        re.search(
+            r"安装|拆卸|卸载|更换|检查|清洁|设置|启动|停机|排空|如何|怎么|调节|连接|打印|删除|操作",
+            question,
+        )
+    )
+    if chinese_action:
+        return True
+    return bool(ENGLISH_ACTION_RE.search(lower))
+
+
+def is_status_behavior_query(question: str) -> bool:
+    return bool(STATUS_BEHAVIOR_RE.search(question))
+
+
+def is_troubleshooting_query(question: str) -> bool:
+    return bool(re.search(r"故障|无法|问题|排除|troubleshoot|trouble shooting|problem|error", question, re.IGNORECASE))
+
+
+def is_start_procedure_query(question: str) -> bool:
+    lower = question.lower()
+    mentions_start = "启动" in question or bool(re.search(r"\bstart(?:ing)?\b", lower))
+    asks_procedure = bool(re.search(r"步骤|如何|怎么|操作|前[一二两三四五六七八九十\d]|最后|steps?|how", question, re.IGNORECASE))
+    return mentions_start and asks_procedure and not is_troubleshooting_query(question)
+
+
+def is_interface_operation_query(question: str) -> bool:
+    return "界面" in question and bool(re.search(r"操作|遵循|步骤|如何|怎么", question))
+
+
+def title_matches_overview_intent(title: str) -> bool:
+    clean = compact_title(title)
+    return bool(OVERVIEW_TITLE_RE.search(title.strip())) or clean.startswith(("overview of", "general description"))
+
+
 def looks_like_english_toc_or_index(text: str) -> bool:
     clean = re.sub(r"\s+", " ", text.replace("<PIC>", "")).strip()
     if SENTENCE_PUNCT_RE.search(clean):
@@ -491,16 +625,14 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
     switch_overview = asks_for_switch_overview(plan.normalized)
     shutdown_procedure = asks_for_shutdown_procedure(plan.normalized)
     caution_query = "注意" in plan.normalized
-    action_query = bool(
-        re.search(
-            r"安装|拆卸|卸载|更换|检查|清洁|设置|启动|停机|排空|如何|怎么|调节|"
-            r"\b(?:install|remove|set|clean|cleaning|press|play|operate|procedure|steps|how|"
-            r"adjust|mount|delete|erase|print|care|check)\b",
-            plan.normalized,
-            re.IGNORECASE,
-        )
-    )
+    action_query = is_action_query(plan.normalized)
     overview_query = is_component_overview_query(plan.normalized)
+    status_behavior_query = is_status_behavior_query(plan.normalized)
+    troubleshooting_query = is_troubleshooting_query(plan.normalized)
+    start_procedure_query = is_start_procedure_query(plan.normalized)
+    interface_operation_query = is_interface_operation_query(plan.normalized) and (
+        "健身追踪器手册" in plan.target_manuals or "健身追踪器" in plan.normalized
+    )
     warranty_query = bool(re.search(r"保修|质保|warranty", plan.normalized, flags=re.IGNORECASE))
     scored_items: list[tuple[SearchResult, int, int]] = []
     for result in results:
@@ -560,6 +692,23 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
         lower_query = plan.normalized.lower()
         title_l = chunk.title.lower()
         title_compact = compact_title(chunk.title)
+        if start_procedure_query:
+            if "启动发动机" in chunk.title or re.search(r"\bstart(?:ing)? the engine\b", title_l):
+                score += 820.0
+            if chunk.title.strip(" #") in {"注", "注意", "note"} and re.search(r"启动发动机前|before starting the engine", readable[:260], re.IGNORECASE):
+                score += 720.0
+            if re.search(r"无法启动|不能启动|发动机无法启动|cannot start|won'?t start|does not start|troubleshoot", f"{chunk.title} {readable[:260]}", re.IGNORECASE):
+                score -= 860.0
+        if troubleshooting_query:
+            if re.search(r"troubleshoot|troublehsooting|trouble shooting|problem|故障|无法|问题", full_text, re.IGNORECASE):
+                score += 420.0
+            if re.search(r"troublehsooting|troubleshooting", full_text, re.IGNORECASE):
+                score += 360.0
+        if interface_operation_query:
+            if chunk.title.startswith(("操作", "基础操作")):
+                score += 760.0
+            elif chunk.title.startswith(("快捷设置", "关闭通知", "查看电量", "查看数据")):
+                score -= 240.0
         if "化油器" in plan.normalized:
             if any(term in chunk.title for term in ("化油器", "高速油针", "低速油针", "怠速调节螺钉")):
                 score += 520.0
@@ -681,6 +830,10 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
         if re.search(r"\b(?:clean|cleaning)\b", lower_query) and "clean" in title_l[:40]:
             score += 220.0
         if overview_query and focus_phrases:
+            if title_matches_overview_intent(chunk.title):
+                score += 460.0
+            elif ACTION_TITLE_RE.match(chunk.title.strip()):
+                score -= 360.0
             for phrase in focus_phrases:
                 phrase_l = compact_title(phrase)
                 if not phrase_l:
@@ -689,6 +842,18 @@ def rerank_results(plan: QueryPlan, results: list[SearchResult]) -> list[SearchR
                     score += 360.0
                 elif title_l.strip().startswith(("install", "remove")) and phrase.lower() in title_l:
                     score -= 420.0
+        if status_behavior_query:
+            behavior_terms = ("behavior", "behaviour", "status", "current status", "状态", "指示灯", "indicator")
+            behavior_hits = sum(1 for term in behavior_terms if term in full_text)
+            score += min(520.0, behavior_hits * 95.0)
+            if "current status" in lower_query and "current status" in full_text:
+                score += 260.0
+            if "different" in lower_query and "different" in full_text:
+                score += 160.0
+            if "base station" in lower_query and "base station" in full_text:
+                score += 180.0
+            if is_low_information_block(readable) and not re.search(r"behavior|behaviour|current status|状态", full_text):
+                score -= 760.0
         if focus_phrases:
             has_focus = any(phrase.lower() in full_text for phrase in focus_phrases)
             if has_focus:
@@ -867,10 +1032,16 @@ def asks_for_shutdown_procedure(question: str) -> bool:
     return "停机" in question and bool(re.search(r"如何|怎么|操作|步骤|让|procedure|steps|how ", question, re.IGNORECASE))
 
 
+def asks_for_multiple_meanings(question: str) -> bool:
+    return bool(re.search(r"这些|各|分别|含义|标识|meanings?", question, re.IGNORECASE))
+
+
 def desired_block_count(question: str, is_english: bool) -> int:
     first_items = asks_for_first_items(question)
     if first_items:
         return min(8, first_items)
+    if asks_for_multiple_meanings(question):
+        return 3 if not is_english else 2
     if "注意" in question:
         return 3
     if asks_for_switch_overview(question):
@@ -962,11 +1133,16 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
     selected_top_score: float | None = None
     max_blocks = desired_block_count(question, is_english)
     block_keep_ratio = 0.50 if max_blocks >= 3 else 0.72
+    if asks_for_multiple_meanings(question):
+        block_keep_ratio = min(block_keep_ratio, 0.60)
     has_substantive = any(not is_low_information_block(readable_chunk_text(result.chunk)) for result in results)
     warranty_query = bool(re.search(r"保修|质保|warranty", question, flags=re.IGNORECASE))
+    overview_query_for_blocks = is_component_overview_query(question)
     for result in results:
         threshold_score = selected_top_score if selected_top_score is not None else top_score
         if blocks and result.score < threshold_score * block_keep_ratio:
+            continue
+        if overview_query_for_blocks and re.match(r"^(?:remove|delete|erase|拆卸|取下|删除)", result.chunk.title.strip(), re.IGNORECASE):
             continue
         title_key = re.sub(r"\s+", " ", result.chunk.title.lower())[:80]
         if title_key in seen:
@@ -1005,7 +1181,11 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
         for image_id in block_image_ids:
             if image_id and image_id not in selected_image_ids and image_path_for_id(image_id) is not None:
                 selected_image_ids.append(image_id)
-        if focused is not None and not ("注意" in question and len(block.replace("<PIC>", "").strip()) < 160):
+        if (
+            focused is not None
+            and not asks_for_multiple_meanings(question)
+            and not ("注意" in question and len(block.replace("<PIC>", "").strip()) < 160)
+        ):
             break
         if len(blocks) == 1 and is_sufficient_procedure_block(question, block):
             break
@@ -1059,6 +1239,156 @@ class AnswerEngine:
         self.retriever = BM25Retriever(self.chunks)
         self.llm = OpenAICompatibleClient() if self.use_llm else None
 
+    def merge_search_results(self, groups: list[list[SearchResult]], top_k: int = 60) -> list[SearchResult]:
+        best: dict[str, SearchResult] = {}
+        for group in groups:
+            for result in group:
+                chunk_id = result.chunk.id
+                if chunk_id not in best or result.score > best[chunk_id].score:
+                    best[chunk_id] = result
+        merged = list(best.values())
+        merged.sort(key=lambda item: item.score, reverse=True)
+        return merged[:top_k]
+
+    def title_phrase_search(
+        self,
+        plan: QueryPlan,
+        allowed_manuals: set[str] | None,
+        top_k: int = 24,
+    ) -> list[SearchResult]:
+        phrases = phrase_tool_candidates(plan)
+        if not phrases:
+            return []
+        overview_query = is_component_overview_query(plan.normalized)
+        scored: list[SearchResult] = []
+        for chunk in self.chunks:
+            if allowed_manuals is not None and chunk.manual not in allowed_manuals:
+                continue
+            title_l = chunk.title.lower()
+            if overview_query and re.match(r"^(?:install|remove|clean|set|replace|安装|拆卸|取下|清洁|更换)", title_l):
+                continue
+            compact = compact_title(chunk.title)
+            score = 0.0
+            for phrase in phrases:
+                phrase_l = phrase.lower()
+                phrase_compact = compact_title(phrase)
+                if not phrase_compact:
+                    continue
+                if phrase_compact == compact:
+                    score += 90.0
+                elif phrase_l in title_l:
+                    score += 55.0 + min(30.0, len(phrase_l) * 0.8)
+                elif phrase_compact in compact and phrase.lower() not in GENERIC_TOOL_PHRASES:
+                    score += 35.0
+            if score > 0:
+                if chunk.image_ids:
+                    score += 2.0
+                scored.append(SearchResult(chunk=chunk, score=score))
+        scored.sort(key=lambda item: item.score, reverse=True)
+        return scored[:top_k]
+
+    def body_phrase_search(
+        self,
+        plan: QueryPlan,
+        allowed_manuals: set[str] | None,
+        top_k: int = 24,
+    ) -> list[SearchResult]:
+        phrases = [
+            phrase
+            for phrase in phrase_tool_candidates(plan)
+            if phrase.lower() not in GENERIC_TOOL_PHRASES and len(phrase.replace(" ", "")) >= 3
+        ]
+        if not phrases:
+            return []
+        overview_query = is_component_overview_query(plan.normalized)
+        scored: list[SearchResult] = []
+        for chunk in self.chunks:
+            if allowed_manuals is not None and chunk.manual not in allowed_manuals:
+                continue
+            text_l = chunk.text.lower()
+            title_l = chunk.title.lower()
+            if overview_query and re.match(r"^(?:install|remove|clean|set|replace|安装|拆卸|取下|清洁|更换)", title_l):
+                continue
+            score = 0.0
+            for phrase in phrases:
+                phrase_l = phrase.lower()
+                if phrase_l in title_l:
+                    score += 35.0
+                pos = text_l.find(phrase_l)
+                if pos < 0:
+                    continue
+                if pos <= 800:
+                    score += 32.0
+                elif pos <= 1800:
+                    score += 22.0
+                else:
+                    score += 12.0
+            if score > 0:
+                if chunk.image_ids:
+                    score += 1.5
+                scored.append(SearchResult(chunk=chunk, score=score))
+        scored.sort(key=lambda item: item.score, reverse=True)
+        return scored[:top_k]
+
+    def top_result_has_action_alignment(self, plan: QueryPlan, result: SearchResult | None) -> bool:
+        if result is None or not is_action_query(plan.normalized):
+            return False
+        text = f"{result.chunk.title} {readable_chunk_text(result.chunk)[:500]}"
+        return bool(
+            ENGLISH_ACTION_RE.search(text)
+            or re.search(r"安装|拆卸|卸载|更换|检查|清洁|设置|启动|停机|排空|调节|连接|打印|删除|操作", text)
+        )
+
+    def top_result_has_focus(self, plan: QueryPlan, result: SearchResult | None) -> bool:
+        if result is None:
+            return False
+        focus_phrases = focused_phrases_from_question(plan.normalized)
+        if not focus_phrases:
+            return True
+        text = f"{result.chunk.title} {readable_chunk_text(result.chunk)[:900]}".lower()
+        return any(phrase.lower() in text for phrase in focus_phrases)
+
+    def should_use_title_phrase_search(self, plan: QueryPlan, bm25_results: list[SearchResult]) -> bool:
+        phrases = phrase_tool_candidates(plan)
+        if not phrases:
+            return False
+        if not bm25_results:
+            return True
+        top = bm25_results[0]
+        second = bm25_results[1] if len(bm25_results) > 1 else None
+        top_text = readable_chunk_text(top.chunk)
+        top_low_info = is_low_information_block(top_text)
+        close_second = bool(second and second.score >= top.score * 0.88)
+        overview_query = is_component_overview_query(plan.normalized)
+        status_behavior_query = is_status_behavior_query(plan.normalized)
+
+        if overview_query and title_matches_overview_intent(top.chunk.title) and top.score >= 35:
+            return False
+        if status_behavior_query and re.search(r"behavior|behaviour|current status|状态", top_text, re.IGNORECASE):
+            return False
+        if self.top_result_has_action_alignment(plan, top) and top.score >= 45:
+            return False
+        if top.score < 45:
+            return True
+        if top_low_info and not self.top_result_has_action_alignment(plan, top):
+            return True
+        return close_second and not self.top_result_has_focus(plan, top)
+
+    def should_use_body_phrase_search(self, plan: QueryPlan, bm25_results: list[SearchResult]) -> bool:
+        if is_component_overview_query(plan.normalized):
+            return False
+        if not phrase_tool_candidates(plan):
+            return False
+        if not bm25_results:
+            return bool(plan.target_manuals)
+        top = bm25_results[0]
+        if self.top_result_has_action_alignment(plan, top) and top.score >= 45:
+            return False
+        top_text = readable_chunk_text(top.chunk)
+        if is_status_behavior_query(plan.normalized) and re.search(r"behavior|behaviour|current status|状态", top_text, re.IGNORECASE):
+            return False
+        return top.score < 45 or (is_low_information_block(top_text) and not self.top_result_has_focus(plan, top))
+
     def expand_short_top_context(self, results: list[SearchResult]) -> list[SearchResult]:
         if not results:
             return results
@@ -1099,19 +1429,25 @@ class AnswerEngine:
                 seen.add(neighbor.id)
         if not neighbors:
             return results
-        if heading_anchor or intro_anchor or continuation_needed:
+        if heading_anchor or intro_anchor or continuation_needed or is_low_information_block(top_text):
             neighbor_ids = {item.chunk.id for item in neighbors}
             return [top, *neighbors, *[item for item in results[1:] if item.chunk.id not in neighbor_ids]]
         return [*results, *neighbors]
 
     def retrieve(self, plan: QueryPlan) -> list[SearchResult]:
         allowed_manuals = set(plan.target_manuals) if plan.target_manuals else None
-        raw = self.retriever.search_many(
+        bm25_results = self.retriever.search_many(
             plan.variants,
             top_k=40,
             per_query_k=24 if allowed_manuals else 18,
             allowed_manuals=allowed_manuals,
         )
+        tool_results: list[list[SearchResult]] = [bm25_results]
+        if self.should_use_title_phrase_search(plan, bm25_results):
+            tool_results.append(self.title_phrase_search(plan, allowed_manuals))
+        if self.should_use_body_phrase_search(plan, bm25_results):
+            tool_results.append(self.body_phrase_search(plan, allowed_manuals))
+        raw = self.merge_search_results(tool_results, top_k=60)
         lowered = plan.normalized.lower()
         if "robot anatomy" in lowered and "vacuum" in lowered:
             for chunk in self.chunks:

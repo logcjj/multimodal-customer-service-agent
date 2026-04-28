@@ -35,7 +35,7 @@ def detect_language(text: str) -> str:
 
 
 MANUAL_ALIAS_RULES = {
-    "VR头显手册": ("vr头显", "vr", "headset", "处理器单元"),
+    "VR头显手册": ("vr头显", "vr", "headset", "处理器单元", "遮光罩"),
     "人体工学椅手册": ("人体工学椅", "椅子", "扶手", "ergonomic chair", "chair"),
     "健身单车手册": ("健身单车", "exercise bike", "bike"),
     "健身追踪器手册": ("健身追踪器", "fitness tracker", "tracker", "watch"),
@@ -164,6 +164,7 @@ ENGLISH_FOCUS_PHRASES = (
     "photo viewer",
     "trouble shooting",
     "troubleshooting",
+    "troublehsooting",
     "silicone cap",
     "float valve",
     "anti-block shield",
@@ -320,6 +321,8 @@ def contextual_expansion_terms(query: str, target_manuals: set[str] | frozenset[
             terms.extend(("发动机开关", "经济控制开关", "燃油开关旋钮", "控制面板"))
         if "停机" in query:
             terms.extend(("AE01025 停机", "断开所有电气设备", "发动机开关", "燃油开关旋钮", "油箱盖通气旋钮"))
+    if "健身追踪器手册" in target_manuals and "界面" in query and "操作" in query:
+        terms.extend(("操作", "基础操作", "触摸屏", "按钮", "滑动", "按下按钮"))
     return terms
 
 
@@ -356,6 +359,8 @@ def focused_phrases_from_query(query: str) -> list[str]:
     for phrase in ENGLISH_FOCUS_PHRASES:
         if phrase in lower:
             phrases.append(phrase)
+    if "troubleshooting" in lower or "trouble shooting" in lower:
+        phrases.append("troublehsooting")
     for quoted in re.findall(r"[“\"']([^“”\"']{2,32})[”\"']", text):
         if quoted.lower() not in {"m", "auto", "manual"}:
             phrases.append(quoted)
