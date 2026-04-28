@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from .manuals import ManualChunk
+from .products import aliases_for_product, product_key_from_manual_name
 
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
@@ -14,16 +15,20 @@ WORD_RE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_\-/\.]*")
 STOP_TERMS = {
     "如何", "怎么", "什么", "哪些", "内容", "正确", "需要", "告诉", "根据", "手册", "说明",
     "请问", "一下", "这个", "那个", "如果", "可以", "应该", "以及", "进行", "使用",
+    "注意", "注意到", "介绍", "不同", "两种", "两个", "两类", "一种", "一个", "一类",
+    "为我", "帮我", "看到", "发现", "相关", "请为", "建议",
     "the", "and", "what", "how", "are", "for", "with", "proper", "correct", "steps",
     "step", "procedure", "procedures", "if", "this", "that", "is", "to", "of", "on",
     "in", "before", "after", "when", "while", "using", "use", "do", "does", "can",
-    "you", "i", "my", "it", "should", "want", "need",
+    "you", "i", "my", "it", "should", "want", "need", "two", "kind", "kinds",
+    "available", "used", "tailor", "meet", "different", "home", "needs", "about",
+    "know", "introduce", "share",
 }
 HIGH_INTENT_TERMS = {
     "充电", "扣紧", "拆卸", "安装", "设置", "清洁", "启动", "停机", "更换", "检查",
-    "调整", "连接", "配对", "排空", "打开", "关闭", "取出", "装入", "保修", "维修",
+    "调整", "调节", "连接", "配对", "卸载", "排空", "打开", "关闭", "取出", "装入", "保修", "维修",
     "故障", "troubleshooting", "cleaning", "mounting", "charge", "charging", "connect",
-    "start", "stop", "adjust", "install", "remove",
+    "start", "stop", "adjust", "install", "remove", "mount", "delete", "erase", "print",
 }
 MANUAL_ALIASES = {
     "vr头显": ("vr", "headset"),
@@ -51,8 +56,8 @@ def tokenize(text: str) -> list[str]:
     for block in CJK_RE.findall(text):
         if len(block) <= 6:
             tokens.append(block)
-        tokens.extend(block[i : i + 2] for i in range(max(0, len(block) - 1)))
-        tokens.extend(block[i : i + 3] for i in range(max(0, len(block) - 2)))
+        for n in range(2, 7):
+            tokens.extend(block[i : i + n] for i in range(max(0, len(block) - n + 1)))
     return tokens
 
 
@@ -83,14 +88,26 @@ class BM25Retriever:
         df = self.doc_freq.get(term, 0)
         return math.log(1 + (n - df + 0.5) / (df + 0.5))
 
-    def search(self, query: str, top_k: int = 6) -> list[SearchResult]:
-        query_terms = tokenize(query)
+    def search(
+        self,
+        query: str,
+        top_k: int = 6,
+        allowed_manuals: set[str] | frozenset[str] | None = None,
+    ) -> list[SearchResult]:
+        all_query_terms = tokenize(query)
+        query_terms = [
+            term
+            for term in all_query_terms
+            if term not in STOP_TERMS and not (len(term) == 1 and term.isascii())
+        ] or all_query_terms
         if not query_terms:
             return []
 
         query_counts = Counter(query_terms)
         scored: list[SearchResult] = []
         for idx, chunk in enumerate(self.chunks):
+            if allowed_manuals is not None and chunk.manual not in allowed_manuals:
+                continue
             tf = self.term_freqs[idx]
             doc_len = self.doc_lens[idx] or 1
             product_terms = self.product_terms_by_manual.get(chunk.manual, set())
@@ -114,6 +131,7 @@ class BM25Retriever:
         queries: Iterable[str],
         top_k: int = 10,
         per_query_k: int = 12,
+        allowed_manuals: set[str] | frozenset[str] | None = None,
     ) -> list[SearchResult]:
         fused_scores: dict[str, float] = {}
         best_result: dict[str, SearchResult] = {}
@@ -121,7 +139,10 @@ class BM25Retriever:
 
         for query_idx, query in enumerate(queries):
             query_weight = 1.0 if query_idx == 0 else 0.72
-            for rank, result in enumerate(self.search(query, top_k=per_query_k), start=1):
+            for rank, result in enumerate(
+                self.search(query, top_k=per_query_k, allowed_manuals=allowed_manuals),
+                start=1,
+            ):
                 chunk_id = result.chunk.id
                 fused_scores[chunk_id] = fused_scores.get(chunk_id, 0.0) + query_weight / (rrf_k + rank)
                 if chunk_id not in best_result or result.score > best_result[chunk_id].score:
@@ -136,6 +157,11 @@ class BM25Retriever:
 
     @staticmethod
     def _manual_name_bonus(query: str, chunk: ManualChunk) -> float:
+        product_key = product_key_from_manual_name(chunk.manual)
+        if product_key:
+            query_l = query.lower()
+            if any(alias.lower() in query_l for alias in aliases_for_product(product_key)):
+                return 6.0
         manual = chunk.manual.replace("手册", "").lower()
         query_l = query.lower()
         if manual and manual in query_l:
@@ -144,6 +170,12 @@ class BM25Retriever:
 
     @staticmethod
     def _product_terms(manual_name: str) -> set[str]:
+        product_key = product_key_from_manual_name(manual_name)
+        if product_key:
+            terms = set(tokenize(product_key.replace("_", " ")))
+            for alias in aliases_for_product(product_key):
+                terms.update(tokenize(alias))
+            return terms
         manual = manual_name.replace("手册", "").lower()
         if manual == "汇总英文":
             return set()
