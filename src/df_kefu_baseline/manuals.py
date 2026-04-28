@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .config import ILLUSTRATION_DIR, MANUAL_DIR
+from .products import english_manual_name, infer_english_product_key
 
 
 PIC_TOKEN_RE = re.compile(r"<PIC>")
@@ -33,6 +34,10 @@ class ManualChunk:
 
 
 def read_manual(path: Path) -> ManualDocument:
+    return read_manual_documents(path)[0]
+
+
+def read_manual_documents(path: Path) -> list[ManualDocument]:
     raw = path.read_text(encoding="utf-8-sig")
     texts: list[str] = []
     image_ids: list[str] = []
@@ -47,11 +52,14 @@ def read_manual(path: Path) -> ManualDocument:
         texts.append(str(parsed[0]))
         if len(parsed) > 1 and isinstance(parsed[1], list):
             image_ids.extend(str(item) for item in parsed[1])
+        text = "\n\n".join(texts)
+        return [ManualDocument(name=path.stem, path=path, text=text, image_ids=tuple(image_ids))]
     else:
         # Some bundled manuals are concatenations of one list literal per line:
         # ["manual text", ["image_id", ...]]
         # Treat each line as one source document instead of indexing the raw
         # Python literal syntax, otherwise retrieval is dominated by artifacts.
+        documents: list[ManualDocument] = []
         for line in raw.splitlines():
             line = line.strip()
             if not line:
@@ -63,18 +71,33 @@ def read_manual(path: Path) -> ManualDocument:
                 except (SyntaxError, ValueError):
                     line_parsed = None
             if isinstance(line_parsed, list) and line_parsed:
-                texts.append(str(line_parsed[0]))
+                text = str(line_parsed[0])
+                line_image_ids: list[str] = []
                 if len(line_parsed) > 1 and isinstance(line_parsed[1], list):
-                    image_ids.extend(str(item) for item in line_parsed[1])
-        if not texts:
-            texts.append(raw)
-
-    text = "\n\n".join(texts)
-    return ManualDocument(name=path.stem, path=path, text=text, image_ids=tuple(image_ids))
+                    line_image_ids.extend(str(item) for item in line_parsed[1])
+                if path.stem == "汇总英文手册":
+                    product_key = infer_english_product_key(text, fallback_index=len(documents) + 1)
+                    name = english_manual_name(product_key)
+                else:
+                    name = f"{path.stem}::{len(documents) + 1:02d}"
+                documents.append(
+                    ManualDocument(
+                        name=name,
+                        path=path,
+                        text=text,
+                        image_ids=tuple(line_image_ids),
+                    )
+                )
+        if documents:
+            return documents
+        return [ManualDocument(name=path.stem, path=path, text=raw, image_ids=())]
 
 
 def load_manuals(manual_dir: Path = MANUAL_DIR) -> list[ManualDocument]:
-    return [read_manual(path) for path in sorted(manual_dir.glob("*.txt"))]
+    documents: list[ManualDocument] = []
+    for path in sorted(manual_dir.glob("*.txt")):
+        documents.extend(read_manual_documents(path))
+    return documents
 
 
 def image_path_for_id(image_id: str, illustration_dir: Path = ILLUSTRATION_DIR) -> Path | None:
@@ -99,7 +122,7 @@ def attach_image_refs(text: str, image_ids: Iterable[str]) -> str:
 
 def split_sections(text: str) -> list[str]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"\s+#\s+", "\n# ", text)
+    text = re.sub(r"(?<!^)(?<![A-Za-z0-9])\s*#\s+(?=[\u4e00-\u9fffA-Za-z])", "\n# ", text)
     text = re.sub(r"[ \t]+", " ", text)
     parts = [part.strip() for part in HEADING_RE.split(text) if part.strip()]
     return parts or [text.strip()]
