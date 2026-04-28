@@ -1109,9 +1109,9 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
     if not results:
         if is_english:
             return "I could not find enough clear information yet. Please provide the product model, symptom, or image so we can verify it further."
-        return "您好，暂时没有检索到足够明确的信息。建议您补充商品型号、故障现象或图片，我们会继续为您核实。"
+        return "暂时没有检索到足够明确的信息。建议补充商品型号、故障现象或图片，以便进一步核实。"
 
-    lines = ["Here is the relevant guidance:"] if is_english else ["您好，相关说明如下："]
+    lines: list[str] = []
     top_text = readable_chunk_text(results[0].chunk)
     has_substantive_result = any(
         not is_low_information_block(readable_chunk_text(result.chunk))
@@ -1119,10 +1119,10 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
     )
     if results[0].chunk.image_ids and is_low_information_block(top_text) and not has_substantive_result:
         if is_english:
-            lines.append(f"1. The requested component or operation overview is shown in the related illustration. <PIC>")
+            lines.append("The requested component or operation overview is shown in the related illustration. <PIC>")
             lines.append(f"Related images: {', '.join(results[0].chunk.image_ids)}")
         else:
-            lines.append("1. 该部件位置或操作示意主要见相关插图。<PIC>")
+            lines.append("该部件位置或操作示意主要见相关插图。<PIC>")
             lines.append(f"相关插图: {', '.join(results[0].chunk.image_ids)}")
         return "\n".join(lines)
 
@@ -1193,13 +1193,11 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
             break
 
     if blocks:
-        for idx, block in enumerate(blocks, start=1):
-            lines.append(f"{idx}. {block}")
+        lines.extend(blocks)
     else:
         chunks = [item.chunk for item in results[:4]]
         sentences = extract_relevant_sentences(question, chunks) or [clean_context_text(chunks[0].text)[:520]]
-        for idx, sentence in enumerate(sentences[:6], start=1):
-            lines.append(f"{idx}. {sentence}")
+        lines.extend(sentences[:6])
 
     image_ids = selected_image_ids[:4] or collect_image_ids(results, limit=4)
     if image_ids:
