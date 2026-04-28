@@ -14,6 +14,11 @@ from .products import english_manual_name, infer_english_product_key
 PIC_TOKEN_RE = re.compile(r"<PIC>")
 PIC_REF_RE = re.compile(r"\[PIC:([^\]]+)\]")
 HEADING_RE = re.compile(r"(?m)(?=^#\s+)")
+SPACED_INLINE_HEADING_RE = re.compile(r"(?<!^)(?<![A-Za-z0-9#])\s*#\s+(?=[\u4e00-\u9fffA-Za-z])")
+GLUED_UPPER_HEADING_RE = re.compile(
+    r"(?<=[\u4e00-\u9fffA-Za-z0-9）)\]])#\s+(?=[A-Z][A-Z0-9/&(),. -]{2,})"
+)
+TROUBLESHOOTING_HEADING_BODY_RE = re.compile(r"(?im)^(# trouble\s*shooting)\s+(?=[A-Za-z])")
 
 
 @dataclass(frozen=True)
@@ -120,9 +125,24 @@ def attach_image_refs(text: str, image_ids: Iterable[str]) -> str:
     return PIC_TOKEN_RE.sub(repl, text)
 
 
-def split_sections(text: str) -> list[str]:
+def preprocess_manual_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"(?<!^)(?<![A-Za-z0-9])\s*#\s+(?=[\u4e00-\u9fffA-Za-z])", "\n# ", text)
+    # Correct a recurring OCR heading typo while preserving the manual's meaning.
+    text = re.sub(r"\bTROUBLEH?SOOTING(?=[A-Za-z])", "TROUBLESHOOTING ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bTROUBLEH?SOOTING\b", "TROUBLESHOOTING", text, flags=re.IGNORECASE)
+    # OCR sometimes glues markdown headings to the previous sentence:
+    # "...module# TROUBLESHOOTING..." should become a new retrievable section.
+    text = SPACED_INLINE_HEADING_RE.sub("\n# ", text)
+    text = GLUED_UPPER_HEADING_RE.sub("\n# ", text)
+    text = re.sub(r"(?m)^#(?=\S)", "# ", text)
+    text = re.sub(r"(?m)^#\s+", "# ", text)
+    text = TROUBLESHOOTING_HEADING_BODY_RE.sub(r"\1\n", text)
+    text = re.sub(r"\b(TROUBLESHOOTING)(?=[a-z])", r"\1 ", text, flags=re.IGNORECASE)
+    return text
+
+
+def split_sections(text: str) -> list[str]:
+    text = preprocess_manual_text(text)
     text = re.sub(r"[ \t]+", " ", text)
     parts = [part.strip() for part in HEADING_RE.split(text) if part.strip()]
     return parts or [text.strip()]
@@ -131,7 +151,9 @@ def split_sections(text: str) -> list[str]:
 def section_title(section: str, default: str) -> str:
     first_line = section.strip().splitlines()[0] if section.strip() else ""
     if first_line.startswith("#"):
-        return first_line.lstrip("#").strip()[:120] or default
+        title = first_line.lstrip("#").strip()
+        title = re.sub(r"\s+#\s*$", "", title).strip()
+        return title[:120] or default
     return default
 
 

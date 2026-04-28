@@ -8,15 +8,20 @@ from pathlib import Path
 
 from df_kefu_baseline.answer import AnswerEngine
 from df_kefu_baseline.config import SUBMISSION_DIR
-from df_kefu_baseline.data import read_questions, write_submission
+from df_kefu_baseline.data import read_questions, split_question_parts, write_submission
+from df_kefu_baseline.policy import answer_policy_subquestion
+from df_kefu_baseline.submission_format import (
+    RET_IMAGE_SEPARATOR,
+    RET_ITEM_SEPARATOR,
+    sanitize_submission_text,
+)
 
 
 IMAGE_FOOTER_RE = re.compile(r"^(?:相关插图|Related images):\s*(.+?)\s*$", re.MULTILINE)
 PIC_RE = re.compile(r"<PIC>")
 
 
-def format_competition_ret(answer: str) -> str:
-    """Format ret as required by the competition: "answer", ["image_id"]."""
+def clean_answer_and_images(answer: str) -> tuple[str, list[str]]:
     image_ids: list[str] = []
 
     def collect_images(match: re.Match[str]) -> str:
@@ -28,7 +33,23 @@ def format_competition_ret(answer: str) -> str:
 
     clean_answer = IMAGE_FOOTER_RE.sub(collect_images, answer)
     clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer).strip()
-    pic_count = len(PIC_RE.findall(clean_answer))
+    return sanitize_submission_text(clean_answer), [sanitize_submission_text(item) for item in image_ids]
+
+
+def format_competition_ret(answer: str | list[str]) -> str:
+    """Format ret like the official examples: JSON answer string(s), then optional image array."""
+    answers = [answer] if isinstance(answer, str) else answer
+    clean_answers: list[str] = []
+    image_ids: list[str] = []
+    for item in answers:
+        clean_answer, answer_image_ids = clean_answer_and_images(item)
+        if clean_answer:
+            clean_answers.append(clean_answer)
+        for image_id in answer_image_ids:
+            if image_id not in image_ids:
+                image_ids.append(image_id)
+
+    pic_count = sum(len(PIC_RE.findall(item)) for item in clean_answers)
     image_ids = image_ids[:pic_count]
     if len(image_ids) < pic_count:
         keep = len(image_ids)
@@ -39,12 +60,22 @@ def format_competition_ret(answer: str) -> str:
             seen += 1
             return match.group(0) if seen <= keep else ""
 
-        clean_answer = PIC_RE.sub(keep_available_pic, clean_answer)
+        clean_answers = [PIC_RE.sub(keep_available_pic, item) for item in clean_answers]
 
-    formatted = json.dumps(clean_answer, ensure_ascii=False)
-    if image_ids and "<PIC>" in clean_answer:
-        formatted += ", " + json.dumps(image_ids, ensure_ascii=False)
+    formatted = RET_ITEM_SEPARATOR.join(json.dumps(item, ensure_ascii=False) for item in clean_answers)
+    if image_ids and any("<PIC>" in item for item in clean_answers):
+        formatted += RET_IMAGE_SEPARATOR + json.dumps(image_ids, ensure_ascii=False)
     return formatted
+
+
+def answer_question(engine: AnswerEngine, question: str, qid: str) -> str | list[str]:
+    parts = split_question_parts(question)
+    if len(parts) <= 1:
+        return engine.answer(question, qid=qid)
+    return [
+        answer_policy_subquestion(part, question) or engine.answer(part, qid=qid)
+        for part in parts
+    ]
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,7 +102,7 @@ def main() -> None:
     engine = AnswerEngine(use_llm=args.use_llm)
     rows: list[tuple[str, str]] = []
     for idx, item in enumerate(questions, start=1):
-        answer = engine.answer(item.question, qid=item.id)
+        answer = answer_question(engine, item.question, qid=item.id)
         rows.append((item.id, format_competition_ret(answer)))
         print(f"[{idx}/{len(questions)}] id={item.id} done")
         if args.use_llm and args.delay > 0:

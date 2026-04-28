@@ -24,6 +24,122 @@ def generic_policy_answer(question: str) -> str:
     )
 
 
+def answer_policy_subquestion(question: str, context: str) -> str | None:
+    q = question.replace("\n", " ")
+    full = f"{context} {q}".replace("\n", " ")
+
+    if any(word in full for word in ("7天", "七天", "无理由", "退换货", "退货")):
+        if any(word in q for word in ("运费", "承担")):
+            return (
+                "您好，非质量问题退换货时，寄回运费通常由买家承担；如果是质量问题、错发、漏发或运输破损，"
+                "经核实后由商家承担相应运费。"
+            )
+        if any(word in q for word in ("条件", "满足")):
+            return (
+                "您好，7天无理由退换货一般要求商品不影响二次销售，配件、赠品、包装和发票等尽量完整；"
+                "特殊品类或已明显使用、损坏的商品可能会影响审核。"
+            )
+        if any(word in q for word in ("支持", "能退", "能换", "无理由")):
+            return "您好，符合条件的商品支持7天无理由退换货，您可以在订单售后入口提交申请并按页面提示寄回。"
+
+    if any(word in full for word in ("售后维修", "维修服务", "人为损坏", "维修费用")):
+        if any(word in q for word in ("范围", "服务范围")):
+            return (
+                "您好，售后维修服务通常覆盖质保期内因非人为原因产生的性能故障，具体以商品保修政策、检测结论和订单记录为准。"
+            )
+        if any(word in q for word in ("人为", "费用", "怎么算", "能维修")):
+            return (
+                "您好，人为损坏、进水、摔坏、私自拆修或超出质保期的情况也可以申请检测维修，"
+                "但可能需要根据检测结果收取配件费、人工费和往返运费。"
+            )
+
+    if any(word in full for word in ("发票", "开票", "抬头")):
+        if any(word in q for word in ("公司", "注意")):
+            return "您好，企业发票请准确填写公司名称、税号、地址电话、开户行及账号等信息，避免因抬头或税号错误影响使用。"
+        if any(word in q for word in ("类型", "能开", "开发票")):
+            return "您好，商品支持开具发票，一般可开个人抬头或企业抬头发票，具体类型以商品页面和平台开票入口为准。"
+        if any(word in q for word in ("多久", "收到")):
+            return "您好，发票通常会在订单完成或确认收货后按平台流程开具，电子发票会发送到订单绑定账户或邮箱。"
+        if any(word in q for word in ("写错", "重新", "重开")):
+            return "您好，发票抬头填写错误时，请尽快联系客服核实是否可以作废重开；已入账或跨期开票可能需要按平台流程红冲后重开。"
+
+    if any(word in full for word in ("包装破损", "破损")):
+        if any(word in q for word in ("怎么办", "收到")):
+            return (
+                "您好，请尽快拍摄外包装、快递面单、破损位置、商品状态和开箱后照片，并保留全部包装材料后提交售后核实。"
+            )
+        if any(word in q for word in ("影响", "退换货")):
+            return (
+                "您好，包装破损不一定影响售后；如果核实为运输破损、商品损坏或到货异常，可按审核结果安排补发、换货、维修或退货退款。"
+            )
+
+    if any(word in full for word in ("退款", "到账", "信用卡", "原路")):
+        if any(word in q for word in ("信用卡", "原路")):
+            return "您好，信用卡订单通常会按原支付路径退回到对应信用卡账户，具体入账时间以银行处理时效为准。"
+        if any(word in q for word in ("政策", "多久", "到账", "退款")):
+            return (
+                "您好，退款会在售后审核通过、退货入库或订单取消成功后发起，通常原路退回；银行卡或信用卡可能需要3-7个工作日入账。"
+            )
+
+    if any(word in full for word in ("包装盒", "包装费")):
+        if any(word in q for word in ("还能换", "包装盒", "丢")):
+            return (
+                "您好，包装盒丢失时建议先联系客服说明情况并提供订单号和商品照片，我们会结合商品品类和实际状态核实是否仍可换货。"
+            )
+        if any(word in q for word in ("包装费", "额外支付", "费用")):
+            return "您好，如果需要补包装或商品状态已影响二次销售，可能产生相应费用或影响退换货审核，具体以售后核实结果为准。"
+
+    if any(word in full for word in ("纸质版说明书", "电子版", "说明书")):
+        if any(word in q for word in ("纸质", "提供")):
+            return "您好，部分商品会随箱提供纸质说明书，是否随附以具体商品包装和页面说明为准。"
+        if any(word in q for word in ("电子版", "哪里", "找到")):
+            return "您好，电子版说明书通常可在商品详情页、订单售后入口查看，也可以联系客服并提供商品型号或订单号协助定位。"
+
+    if any(word in full for word in ("国外", "国际", "寄到国外")):
+        if any(word in q for word in ("国外", "寄")):
+            return "您好，是否支持寄送到国外需要根据商品品类、目的地国家或地区以及可用物流渠道确认。"
+        if any(word in q for word in ("运费", "多久", "到")):
+            return "您好，国际运费和时效会因目的地、重量、清关要求和物流渠道不同而变化，建议您提供完整收货地址后核实预计费用和时效。"
+
+    if any(word in full for word in ("瑕疵", "使用过", "换货还是", "只能维修")):
+        if any(word in q for word in ("能售后", "瑕疵", "使用过")):
+            return "您好，已使用商品如存在质量问题、瑕疵、错发漏发或描述明显不符，仍可提供照片或视频申请售后核实。"
+        if any(word in q for word in ("换货", "维修")):
+            return "您好，核实为质量问题后可按规则办理维修、换货或退货退款；若仅因个人原因且影响二次销售，可能无法按无理由退换处理。"
+
+    if any(word in full for word in ("售后保障卡", "保障卡")):
+        if any(word in q for word in ("有售后保障卡", "保障卡吗")):
+            return "您好，售后保障通常以订单记录、发票、电子保修凭证或商品序列号为准，是否随附实体保障卡以商品包装为准。"
+        if any(word in q for word in ("卡丢", "还能享受")):
+            return "您好，保障卡丢失不一定影响售后服务，请提供订单号、购买凭证和商品信息，我们会核实保修期限及可享受的服务范围。"
+
+    if any(word in full for word in ("智能客服", "人工客服")):
+        if any(word in q for word in ("能解答", "哪些问题")):
+            return "您好，智能客服可以协助解答订单查询、物流进度、退换货、退款、发票、售后维修、商品使用说明等常见问题。"
+        if any(word in q for word in ("解答不了", "怎么办")):
+            return "您好，如果智能客服无法判断或问题较复杂，您可以转人工客服，并提供订单号和相关凭证，我们会进一步核实处理。"
+
+    if any(word in full for word in ("少发", "少了一件", "补寄", "补发")):
+        if any(word in q for word in ("少发", "少了", "怎么办")):
+            return "您好，若收到商品少件，请先保留外包装、快递面单和商品清点照片，并提供订单号，我们会核对出库重量和打包记录。"
+        if any(word in q for word in ("什么时候", "补寄", "补发", "运费", "承担")):
+            return "您好，确认少发后会尽快补寄缺少商品或配件；责任在商家或物流方时，通常不需要您承担补寄运费。"
+
+    if any(word in full for word in ("尺寸", "更大的尺寸", "差价")):
+        if any(word in q for word in ("能换", "尺寸")) and "差价" not in q:
+            return "您好，如商品支持换货且不影响二次销售，可以申请更换尺寸、颜色或款式，具体以售后审核结果为准。"
+        if any(word in q for word in ("差价", "怎么处理")):
+            return "您好，若新旧商品存在差价，通常需要按页面价格多退少补；非质量原因产生的寄回运费一般由买家承担。"
+
+    if any(word in full for word in ("快递丢失", "丢失")):
+        if any(word in q for word in ("怎么办", "丢失")):
+            return "您好，若快递疑似丢失，请提供订单号和物流单号，我们会联系快递核查签收轨迹、派送记录和责任原因。"
+        if any(word in q for word in ("赔偿", "多久", "解决")):
+            return "您好，确认丢件后，会按商品情况安排补发、退款或赔付；处理时效取决于快递核查结果，我们会持续同步进度。"
+
+    return answer_policy_question(q) or answer_policy_question(full)
+
+
 def answer_policy_question(question: str) -> str | None:
     q = question.replace("\n", " ")
 

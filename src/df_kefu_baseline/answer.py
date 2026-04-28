@@ -1108,10 +1108,10 @@ def fallback_manual_answer(question: str, results: list[SearchResult]) -> str:
     is_english = detect_language(question) == "en"
     if not results:
         if is_english:
-            return "I could not find enough clear information in the provided manuals. Please provide the product model, symptom, or image so we can verify it further."
-        return "您好，暂未在已提供的资料中检索到足够明确的信息。建议您补充商品型号、故障现象或图片，我们会继续为您核实。"
+            return "I could not find enough clear information yet. Please provide the product model, symptom, or image so we can verify it further."
+        return "您好，暂时没有检索到足够明确的信息。建议您补充商品型号、故障现象或图片，我们会继续为您核实。"
 
-    lines = ["The relevant instructions are:"] if is_english else ["您好，相关说明如下："]
+    lines = ["Here is the relevant guidance:"] if is_english else ["您好，相关说明如下："]
     top_text = readable_chunk_text(results[0].chunk)
     has_substantive_result = any(
         not is_low_information_block(readable_chunk_text(result.chunk))
@@ -1460,22 +1460,10 @@ class AnswerEngine:
 
     def answer(self, question: str, qid: str | int | None = None) -> str:
         plan = build_query_plan(question, self.manual_names)
-        force_manual = False
-        force_policy = False
-        if qid is not None:
-            try:
-                numeric_qid = int(qid)
-                force_policy = numeric_qid < 64
-                force_manual = numeric_qid >= 64
-            except ValueError:
-                force_manual = False
-        force_manual = force_manual or looks_like_manual_question(plan.normalized)
+        manual_question = bool(plan.target_manuals) or looks_like_manual_question(plan.normalized)
 
-        policy_answer = None if force_manual and not force_policy else answer_policy_question(plan.normalized)
-        if policy_answer:
-            return policy_answer
-        if force_policy:
-            return generic_policy_answer(plan.normalized)
+        if not manual_question:
+            return answer_policy_question(plan.normalized) or generic_policy_answer(plan.normalized)
 
         results = self.retrieve(plan)
         if self.use_llm and self.llm is not None and results:

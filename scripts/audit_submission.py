@@ -9,7 +9,9 @@ from collections import Counter
 from pathlib import Path
 
 from df_kefu_baseline.config import PROJECT_ROOT, QUESTION_PATH
+from df_kefu_baseline.policy import looks_like_manual_question
 from df_kefu_baseline.products import ENGLISH_PRODUCT_ALIASES, candidate_product_keys_for_query
+from df_kefu_baseline.submission_format import find_disallowed_submission_chars
 
 
 CHINESE_PRODUCT_ALIASES: dict[str, tuple[str, ...]] = {
@@ -74,23 +76,61 @@ def read_questions(path: Path) -> dict[str, str]:
 
 
 def parse_ret(ret: str) -> tuple[str, list[str], str]:
+    def parse_plain_ret(value: str) -> tuple[str, list[str], str]:
+        split_at = value.rfind(",[")
+        if split_at < 0:
+            return value.strip(), [], ""
+        answer = value[:split_at].strip()
+        image_part = value[split_at + 1 :].strip()
+        try:
+            parsed_images = json.loads(image_part)
+        except Exception:
+            return value.strip(), [], ""
+        if not isinstance(parsed_images, list):
+            return answer, [], "图片数组不是list"
+        if any(not isinstance(item, str) for item in parsed_images):
+            return answer, [str(item) for item in parsed_images], "图片数组只能包含字符串"
+        return answer, parsed_images, ""
+
+    stripped = ret.lstrip()
+    if not stripped.startswith('"'):
+        return parse_plain_ret(ret)
+
     decoder = json.JSONDecoder()
-    try:
-        answer, idx = decoder.raw_decode(ret)
-    except Exception as exc:
-        return "", [], f"ret正文不是合法JSON字符串: {exc}"
-    rest = ret[idx:].strip()
-    if not rest:
-        return str(answer), [], ""
-    if not rest.startswith(","):
-        return str(answer), [], "ret正文后不是图片数组"
-    try:
-        images = json.loads(rest[1:].strip())
-    except Exception as exc:
-        return str(answer), [], f"图片数组解析失败: {exc}"
-    if not isinstance(images, list):
-        return str(answer), [], "图片数组不是list"
-    return str(answer), [str(item) for item in images], ""
+    idx = 0
+    answers: list[str] = []
+    images: list[str] = []
+    while idx < len(ret):
+        while idx < len(ret) and ret[idx].isspace():
+            idx += 1
+        if idx >= len(ret):
+            break
+        try:
+            value, idx = decoder.raw_decode(ret, idx)
+        except Exception as exc:
+            if not answers and not images:
+                return parse_plain_ret(ret)
+            return "\n".join(answers), images, f"ret片段不是合法JSON: {exc}"
+        if isinstance(value, str):
+            answers.append(value)
+        elif isinstance(value, list):
+            if images:
+                return "\n".join(answers), images, "ret包含多个图片数组"
+            images = [str(item) for item in value]
+            if any(not isinstance(item, str) for item in value):
+                return "\n".join(answers), images, "图片数组只能包含字符串"
+        else:
+            return "\n".join(answers), images, "ret片段必须是字符串或图片数组"
+        while idx < len(ret) and ret[idx].isspace():
+            idx += 1
+        if idx >= len(ret):
+            break
+        if isinstance(value, list):
+            return "\n".join(answers), images, "图片数组必须位于ret末尾"
+        if ret[idx] != ",":
+            return "\n".join(answers), images, "ret片段之间缺少逗号"
+        idx += 1
+    return "\n".join(answers), images, ""
 
 
 def is_english_like(text: str) -> bool:
@@ -231,10 +271,17 @@ def audit_row(qid: str, question: str, ret: str) -> dict[str, str]:
     a_products = detect_products(answer)
     extra_products = a_products - q_products
     first_product = first_product_mention(answer, a_products)
-    manual_question = int(qid) >= 64 if qid.isdigit() else True
+    manual_question = looks_like_manual_question(question)
 
     if parse_error:
         issues.append(parse_error)
+        severity = "严重"
+    bad_chars = find_disallowed_submission_chars(ret)
+    if bad_chars:
+        issues.append(
+            "ret包含异常字符: "
+            + ",".join(f"{item['char']}({item['codepoint']})x{item['count']}" for item in bad_chars[:5])
+        )
         severity = "严重"
     if answer.count("<PIC>") != len(images):
         issues.append("<PIC>数量与图片数组数量不一致")
@@ -326,7 +373,7 @@ def audit_submission(submission_path: Path, output_csv: Path | None = None) -> t
     for idx, qid in enumerate(question_ids):
         if qid not in answers or qid not in row_by_id:
             continue
-        if not qid.isdigit() or int(qid) < 64:
+        if not looks_like_manual_question(questions[qid]):
             continue
         q_products = detect_products(questions[qid])
         q_focus = set(focused_phrases_from_question(questions[qid]))
@@ -338,7 +385,7 @@ def audit_submission(submission_path: Path, output_csv: Path | None = None) -> t
         for other_id in question_ids[idx + 1 : idx + 4]:
             if other_id not in answers or other_id not in row_by_id:
                 continue
-            if not other_id.isdigit() or int(other_id) < 64:
+            if not looks_like_manual_question(questions[other_id]):
                 continue
             other_products = detect_products(questions[other_id])
             other_focus = set(focused_phrases_from_question(questions[other_id]))
