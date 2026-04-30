@@ -7,7 +7,7 @@
 | 阶段 | 分数 | 说明 |
 | --- | ---: | --- |
 | 初始版本 | 0.33 | 基础检索和模板回答，存在政策题误检索、英文手册解析错误、图片格式不一致等问题。 |
-| 当前版本 | 0.5312 | 已完成提交格式修复、英文汇总手册解析、售后题路由、专业题直出说明书内容、tag 约束检索重排、图片 `<PIC>` 与图片数组一致性校验。 |
+| 当前版本 | 0.55 | 已完成提交格式修复、英文汇总手册解析、售后题路由、专业题直出说明书内容、tag 约束检索重排、LLM judge 循环修正、图片 `<PIC>` 与图片数组一致性校验。 |
 | 暂定目标 | 0.65 | 下一步重点提升检索精度、答案压缩质量和复杂多图说明题的覆盖率。 |
 
 ## 方案概览
@@ -146,6 +146,20 @@ $env:PYTHONPATH = "src"
 python .\scripts\generate_submission.py --output .\submissions\submission_optimized.csv
 ```
 
+可选：启用基于 `BAAI/bge-reranker-*` 的 FlagEmbedding 风格重排：
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:DF_ENABLE_FLAG_RERANKER = "1"
+$env:DF_FLAG_RERANKER_MODEL = "BAAI/bge-reranker-base"
+python .\scripts\generate_submission.py --output .\submissions\submission_with_reranker.csv
+```
+
+说明：
+- 默认关闭，不影响现有 BM25 + 规则重排流程；
+- 需要本机可加载对应 Hugging Face 模型；
+- 若模型加载失败，会自动回退到原始本地重排。
+
 生成后建议检查：
 
 ```bash
@@ -215,7 +229,7 @@ export KAFU_API_TOKEN="评测方约定的 token"
 推荐提交：
 
 ```text
-submissions/submission_policy_template_v2.csv
+submissions/llm_loop_full5/iter1.csv
 ```
 
 该文件已按比赛提交格式生成，并经过基础一致性检查：
@@ -225,4 +239,4 @@ submissions/submission_policy_template_v2.csv
 - `<PIC>` 数量与图片数组数量一致；
 - 图片数组 ID 均存在对应图片文件；
 - 无 `相关插图:` / `Related images:` 等非比赛格式尾注；
-- 当前线上反馈分数为 **0.45625000**。
+- 当前线上反馈分数为 **0.55**。

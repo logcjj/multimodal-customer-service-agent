@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .flag_reranker import FlagEmbeddingReranker
 from .llm_client import OpenAICompatibleClient
 from .manuals import ManualChunk, build_chunks, image_path_for_id, load_manuals
 from .policy import answer_policy_question, generic_policy_answer, looks_like_manual_question
@@ -1228,6 +1229,7 @@ def build_llm_messages(question: str, results: list[SearchResult]) -> list[dict[
 @dataclass
 class AnswerEngine:
     use_llm: bool = False
+    use_flag_reranker: bool | None = None
 
     def __post_init__(self) -> None:
         manuals = load_manuals()
@@ -1235,6 +1237,7 @@ class AnswerEngine:
         self.chunks = build_chunks(manuals)
         self.chunk_pos = {chunk.id: idx for idx, chunk in enumerate(self.chunks)}
         self.retriever = BM25Retriever(self.chunks)
+        self.flag_reranker = FlagEmbeddingReranker(enabled=self.use_flag_reranker)
         self.llm = OpenAICompatibleClient() if self.use_llm else None
 
     def merge_search_results(self, groups: list[list[SearchResult]], top_k: int = 60) -> list[SearchResult]:
@@ -1387,6 +1390,118 @@ class AnswerEngine:
             return False
         return top.score < 45 or (is_low_information_block(top_text) and not self.top_result_has_focus(plan, top))
 
+    def flag_reranker_text(self, chunk: ManualChunk) -> str:
+        title = re.sub(r"\s+", " ", chunk.title).strip()
+        body = readable_chunk_text(chunk)
+        if len(body) > 1800:
+            body = body[:1800]
+        return f"{title}\n{body}".strip()
+
+    def reranker_candidate_quality(self, plan: QueryPlan, result: SearchResult) -> float:
+        text = readable_chunk_text(result.chunk)
+        title = result.chunk.title.lower()
+        head = text[:1200].lower()
+        score = 0.0
+
+        core_terms = [
+            term
+            for term in tokenize(plan.normalized)
+            if len(term) >= 2 and term not in COMMON_QUERY_TERMS and not any(ch.isdigit() for ch in term)
+        ]
+        for term in core_terms:
+            if term in title:
+                score += 3.0
+            elif term in head:
+                score += 1.2
+
+        focus_phrases = focused_phrases_from_question(plan.normalized)
+        for phrase in focus_phrases:
+            phrase_l = phrase.lower()
+            if phrase_l in title:
+                score += 6.0
+            elif phrase_l in head:
+                score += 3.5
+
+        if self.top_result_has_action_alignment(plan, result):
+            score += 4.0
+        if self.top_result_has_focus(plan, result):
+            score += 4.0
+        if not is_low_information_block(text):
+            score += 2.0
+
+        compact = compact_title(result.chunk.title)
+        for phrase in focus_phrases:
+            phrase_compact = compact_title(phrase)
+            if phrase_compact and (compact == phrase_compact or compact.startswith(phrase_compact)):
+                score += 5.0
+
+        return score
+
+    def should_use_flag_reranker(self, plan: QueryPlan, results: list[SearchResult]) -> bool:
+        if not self.flag_reranker.active or len(results) < 2:
+            return False
+        if detect_language(plan.normalized) != "en":
+            return False
+
+        target_manuals = plan.target_manuals
+        if target_manuals and not all(manual.startswith("汇总英文手册::") for manual in target_manuals):
+            return False
+
+        top = results[0]
+        second = results[1]
+        top_text = readable_chunk_text(top.chunk)
+        focus_phrases = focused_phrases_from_question(plan.normalized)
+        title_l = top.chunk.title.lower()
+        title_exact_focus = any(
+            compact_title(phrase) == compact_title(top.chunk.title) or phrase.lower() in title_l
+            for phrase in focus_phrases
+            if compact_title(phrase)
+        )
+        close_scores = second.score >= top.score * 0.92
+        top_is_low_info = is_low_information_block(top_text)
+        top_has_focus = self.top_result_has_focus(plan, top)
+        top_has_action = self.top_result_has_action_alignment(plan, top)
+
+        if title_exact_focus and top_has_focus and (top_has_action or not top_is_low_info):
+            return False
+        if not close_scores and top_has_focus and (top_has_action or not top_is_low_info):
+            return False
+        return close_scores or top_is_low_info or not top_has_focus
+
+    def apply_flag_reranker(self, plan: QueryPlan, results: list[SearchResult], candidate_limit: int = 20) -> list[SearchResult]:
+        if not results or not self.should_use_flag_reranker(plan, results):
+            return results
+
+        candidates = results[: min(candidate_limit, 10)]
+        docs = [self.flag_reranker_text(result.chunk) for result in candidates]
+        rerank_scores = self.flag_reranker.score_texts(plan.normalized, docs)
+        if len(rerank_scores) != len(candidates):
+            return results
+
+        low = min(rerank_scores)
+        high = max(rerank_scores)
+        spread = high - low
+        reranked_candidates: list[SearchResult] = []
+        for result, rerank_score in zip(candidates, rerank_scores):
+            normalized = 0.5 if spread <= 1e-6 else (rerank_score - low) / spread
+            fused_score = result.score + normalized * 10.0
+            reranked_candidates.append(SearchResult(chunk=result.chunk, score=fused_score))
+
+        reranked_candidates.sort(key=lambda item: item.score, reverse=True)
+        original_top = candidates[0]
+        reranked_top = reranked_candidates[0]
+        original_quality = self.reranker_candidate_quality(plan, original_top)
+        reranked_quality = self.reranker_candidate_quality(plan, reranked_top)
+        if (
+            reranked_top.chunk.id != original_top.chunk.id
+            and reranked_quality < original_quality + 2.5
+        ):
+            return results
+
+        seen_ids = {item.chunk.id for item in reranked_candidates}
+        tail = [item for item in results[candidate_limit:] if item.chunk.id not in seen_ids]
+        return [*reranked_candidates, *tail]
+
     def expand_short_top_context(self, results: list[SearchResult]) -> list[SearchResult]:
         if not results:
             return results
@@ -1454,6 +1569,7 @@ class AnswerEngine:
                     break
         narrowed = narrow_results(plan, raw)
         reranked = rerank_results(plan, narrowed)
+        reranked = self.apply_flag_reranker(plan, reranked)
         return self.expand_short_top_context(reranked[:8])
 
     def answer(self, question: str, qid: str | int | None = None) -> str:

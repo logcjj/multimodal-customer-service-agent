@@ -18,9 +18,17 @@ class LLMConfig:
     def from_env(cls) -> "LLMConfig":
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set.")
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+            api_key = os.getenv("DASHSCOPE_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY or DASHSCOPE_API_KEY is not set.")
+        default_base_url = (
+            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            if os.getenv("DASHSCOPE_API_KEY", "").strip() and not os.getenv("OPENAI_API_KEY", "").strip()
+            else "https://api.openai.com/v1"
+        )
+        base_url = os.getenv("OPENAI_BASE_URL", os.getenv("DASHSCOPE_BASE_URL", default_base_url)).strip().rstrip("/")
+        default_model = "qwen-plus" if "dashscope.aliyuncs.com" in base_url else "gpt-4o-mini"
+        model = os.getenv("OPENAI_MODEL", os.getenv("DASHSCOPE_MODEL", default_model)).strip()
         return cls(api_key=api_key, base_url=base_url, model=model)
 
 
