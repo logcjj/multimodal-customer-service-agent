@@ -130,7 +130,7 @@ npm run dev -- --host 127.0.0.1 --port 5175
 | 配置组 | 示例变量 | 用途 |
 | --- | --- | --- |
 | 运行时 | `AKA_ROLLOUT_MODE`, `AKA_OFFLINE_INDEX_MODE` | 选择回答与索引模式 |
-| 存储 | `AKA_DATABASE_URL`, `AKA_MODEL_SECRET_KEY` | SQLite/PostgreSQL 与模型凭据加密 |
+| 存储/跨域 | `AKA_DATABASE_URL`, `AKA_MODEL_SECRET_KEY`, `AKA_CORS_ORIGINS` | SQLite/PostgreSQL、模型凭据加密与浏览器来源 |
 | 模型 | `OPENAI_*`, `DASHSCOPE_*`, `ALIYUN_*` | 文本、视觉、向量、重排和 OCR 提供商 |
 | 记忆 | `AKA_SESSION_MEMORY`, `AKA_LAYERED_MEMORY` | 会话上下文与分层记忆 |
 | 检索 | `AKA_IMAGE_CHUNK_RETRIEVAL`, `AKA_CAPTION_EMBEDDING` | 文本/图片证据路径 |
@@ -180,7 +180,8 @@ curl -X POST http://127.0.0.1:8002/api/chat \
 
 1. 在仓库 Settings → Pages 中将 Source 设为 **GitHub Actions**。
 2. 如果后端部署在独立 HTTPS 地址，在 Settings → Secrets and variables → Actions → Variables 添加 `VITE_API_BASE_URL`，值为后端根地址，例如 `https://api.example.com`。
-3. 工作流会把仓库名作为 Pages 子路径注入 `VITE_BASE_URL`，因此前端资源和路由可直接在项目 Pages 地址下工作。
+3. 在后端 `.env` 设置 `AKA_CORS_ORIGINS=https://logcjj.github.io`（只填 Origin，不带路径），允许 Pages 前端访问 API。
+4. 工作流会把仓库名作为 Pages 子路径注入 `VITE_BASE_URL`，因此前端资源和路由可直接在项目 Pages 地址下工作。
 
 GitHub Pages 只负责静态前端，FastAPI 仍需部署到支持 ASGI 的运行环境。生产环境应启用 TLS、认证、上传限制、日志脱敏和数据库/索引备份。详细命令见 [deployment guide](backend/docs/DEPLOYMENT.md)。
 

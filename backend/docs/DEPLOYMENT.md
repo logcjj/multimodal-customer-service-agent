@@ -60,6 +60,10 @@ Start from `.env.example`. Leave optional values blank until the corresponding
 provider or feature is enabled. Store live credentials in the deployment
 platform's secret manager.
 
+For a browser frontend hosted on another origin, set `AKA_CORS_ORIGINS` to a
+comma-separated allowlist of exact origins, for example
+`https://logcjj.github.io`. Do not use `*` when credentials are enabled.
+
 The default database is a local SQLite file under `backend/data`. Use
 `AKA_DATABASE_URL` with PostgreSQL for multiple instances. Every instance that
 reads encrypted model configuration must share the same

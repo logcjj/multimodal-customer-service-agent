@@ -38,6 +38,26 @@ from app.runtime.dynamic_routing import IntentRouter, KnowledgeCoverageGate
 from app.runtime.session_memory import SessionMemoryStore
 from app.storage.database import Database
 
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+    "http://localhost:5176",
+    "http://127.0.0.1:5176",
+)
+
+
+def configured_cors_origins() -> list[str]:
+    extra_origins = [
+        origin.strip()
+        for origin in os.getenv("AKA_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    return list(dict.fromkeys((*DEFAULT_CORS_ORIGINS, *extra_origins)))
+
 
 def create_app(
     data_dir: Path | None = None,
@@ -141,16 +161,7 @@ def create_app(
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:5174",
-            "http://localhost:5175",
-            "http://127.0.0.1:5175",
-            "http://localhost:5176",
-            "http://127.0.0.1:5176",
-        ],
+        allow_origins=configured_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
