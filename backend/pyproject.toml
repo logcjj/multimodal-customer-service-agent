@@ -1,7 +1,7 @@
 [project]
-name = "aka-customer-multi-agent"
+name = "multimodal-customer-service-agent"
 version = "0.7.0"
-description = "Evidence-first multi-agent customer service platform"
+description = "Evidence-first multimodal customer service agent"
 requires-python = ">=3.13"
 dependencies = [
   "cryptography>=45.0.0",

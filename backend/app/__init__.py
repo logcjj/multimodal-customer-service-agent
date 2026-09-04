@@ -1,2 +1,1 @@
-"""AKA Multi-Agent customer service backend."""
-
+"""Multimodal customer service agent backend."""

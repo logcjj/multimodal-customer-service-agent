@@ -49,7 +49,7 @@ def create_app(
     settings = RuntimeSettings.from_env()
     database = Database(resolved_data_dir, database_url=settings.database_url)
 
-    app = FastAPI(title="AKA Multi-Agent Customer Service", version="0.7.0")
+    app = FastAPI(title="Multimodal Customer Service Agent", version="0.7.0")
     app.state.settings = settings
     app.state.database = database
     app.state.model_service = ModelService(database)

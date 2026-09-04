@@ -3,7 +3,7 @@ revision = 3
 requires-python = ">=3.13"
 
 [[package]]
-name = "aka-customer-multi-agent"
+name = "multimodal-customer-service-agent"
 version = "0.7.0"
 source = { editable = "." }
 dependencies = [
