@@ -5,5 +5,5 @@ The frontend includes components adapted from
 [`LICENSE.ragflow`](LICENSE.ragflow) and the upstream project license before
 redistributing those components.
 
-AKA Sentinel-specific pages, components, and API adapters are located under
+Project-specific pages, components, and API adapters are located under
 `frontend/src/aka`.

@@ -520,7 +520,7 @@ export default function ChatPage() {
                 <div className="mx-auto grid size-12 place-items-center rounded-xl border border-border-button bg-bg-card">
                   <Bot className="size-5" />
                 </div>
-                <h2 className="mt-4 text-xl font-semibold">AKA Sentinel</h2>
+                <h2 className="mt-4 text-xl font-semibold">多模态客服智能体系统</h2>
                 <p className="mt-2 text-sm text-text-secondary">
                   输入产品、故障、错误码或售后问题，系统会动态选择 Agent
                   并引用说明书证据。
@@ -556,7 +556,7 @@ export default function ChatPage() {
                   <div className="min-w-0">
                     <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
                       <strong>
-                        {entry.role === 'assistant' ? 'AKA Sentinel' : '用户'}
+                        {entry.role === 'assistant' ? '客服智能体' : '用户'}
                       </strong>
                       {entry.response ? (
                         <span className="inline-flex items-center gap-1 text-state-success">

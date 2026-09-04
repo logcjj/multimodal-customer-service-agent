@@ -9,6 +9,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { ThemeEnum } from '@/constants/common';
+import { publicAssetUrl } from '@/lib/runtime-paths';
 import { cn } from '@/lib/utils';
 import {
   Bot,
@@ -247,12 +248,16 @@ export function AppShell({
               >
                 <SheetTitle className="sr-only">主导航</SheetTitle>
                 <SheetDescription className="sr-only">
-                  打开 AKA Sentinel 的主要工作区
+                  打开多模态客服智能体系统的主要工作区
                 </SheetDescription>
                 <div className="flex h-16 items-center gap-3 border-b border-border-button px-5">
-                  <img src="/logo.svg" alt="AKA Sentinel" className="size-8" />
+                  <img
+                    src={publicAssetUrl('logo.svg')}
+                    alt="多模态客服智能体系统"
+                    className="size-8"
+                  />
                   <div>
-                    <div className="text-sm font-semibold">AKA Sentinel</div>
+                    <div className="text-sm font-semibold">客服智能体系统</div>
                     <div className="text-xs text-text-secondary">
                       Multi-Agent Service OS
                     </div>
@@ -278,12 +283,16 @@ export function AppShell({
           <Link
             to="/"
             className="flex min-w-0 items-center gap-3"
-            aria-label="AKA Sentinel 工作台"
+            aria-label="多模态客服智能体系统工作台"
           >
-            <img src="/logo.svg" alt="" className="size-9 shrink-0" />
+            <img
+              src={publicAssetUrl('logo.svg')}
+              alt=""
+              className="size-9 shrink-0"
+            />
             <div className="hidden min-w-0 sm:block">
               <div className="truncate text-sm font-semibold tracking-[0]">
-                AKA Sentinel
+                客服智能体系统
               </div>
               <div className="truncate text-[11px] text-text-secondary">
                 Multi-Agent Service OS

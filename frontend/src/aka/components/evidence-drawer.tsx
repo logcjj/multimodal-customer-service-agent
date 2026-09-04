@@ -1,4 +1,5 @@
 import type { Evidence } from '@/aka/api/types';
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -6,7 +7,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import { apiUrl } from '@/lib/runtime-paths';
 import {
   BookOpen,
   ExternalLink,
@@ -33,14 +34,17 @@ export function EvidenceDrawer({
     evidence?.source_type === 'image' && evidence.dataset_id && imageChunkId
       ? `/dataset/${encodeURIComponent(evidence.dataset_id)}?tab=images&image=${encodeURIComponent(imageChunkId)}`
       : evidence?.dataset_id && evidence.document_id && childId
-      ? `/dataset/${encodeURIComponent(evidence.dataset_id)}?tab=chunks&document=${encodeURIComponent(evidence.document_id)}&child=${encodeURIComponent(childId)}`
-      : null;
+        ? `/dataset/${encodeURIComponent(evidence.dataset_id)}?tab=chunks&document=${encodeURIComponent(evidence.document_id)}&child=${encodeURIComponent(childId)}`
+        : null;
   const originalFileHref = evidence?.file_id
-    ? `/api/files/${encodeURIComponent(evidence.file_id)}/content${
-        evidence.document_mime_type === 'application/pdf' && evidence.page_start
-          ? `#page=${evidence.page_start}`
-          : ''
-      }`
+    ? apiUrl(
+        `/api/files/${encodeURIComponent(evidence.file_id)}/content${
+          evidence.document_mime_type === 'application/pdf' &&
+          evidence.page_start
+            ? `#page=${evidence.page_start}`
+            : ''
+        }`,
+      )
     : null;
 
   return (
@@ -67,7 +71,10 @@ export function EvidenceDrawer({
           <div className="flex min-w-0 items-center gap-2 border-b border-border-button px-5 py-3 text-xs">
             <FileText className="size-4 shrink-0 text-text-secondary" />
             <span className="text-text-secondary">来源文件</span>
-            <strong className="min-w-0 truncate" title={evidence.document_name ?? undefined}>
+            <strong
+              className="min-w-0 truncate"
+              title={evidence.document_name ?? undefined}
+            >
               {evidence.document_name ?? '未记录原始文件名'}
             </strong>
           </div>
@@ -107,9 +114,14 @@ export function EvidenceDrawer({
               ],
               ['来源类型', evidence.source_type],
             ].map(([label, value]) => (
-              <div key={label} className="min-w-0 border-r border-border-button px-4 py-3 last:border-r-0">
+              <div
+                key={label}
+                className="min-w-0 border-r border-border-button px-4 py-3 last:border-r-0"
+              >
                 <dt className="text-[10px] text-text-secondary">{label}</dt>
-                <dd className="mt-1 truncate font-medium" title={value}>{value}</dd>
+                <dd className="mt-1 truncate font-medium" title={value}>
+                  {value}
+                </dd>
               </div>
             ))}
           </dl>
@@ -122,13 +134,17 @@ export function EvidenceDrawer({
                   {evidence.asset_ids.map((assetId) => (
                     <a
                       key={assetId}
-                      href={`/api/assets/${encodeURIComponent(assetId)}`}
+                      href={apiUrl(
+                        `/api/assets/${encodeURIComponent(assetId)}`,
+                      )}
                       target="_blank"
                       rel="noreferrer"
                       className="overflow-hidden rounded-md border border-border-button bg-white"
                     >
                       <img
-                        src={`/api/assets/${encodeURIComponent(assetId)}`}
+                        src={apiUrl(
+                          `/api/assets/${encodeURIComponent(assetId)}`,
+                        )}
                         alt={`${evidence.title} 关联图片`}
                         loading="lazy"
                         className="aspect-video size-full object-contain"
@@ -175,9 +191,14 @@ export function EvidenceDrawer({
                   ['Child', evidence.child_ids?.join(', ') || '--'],
                   ['ImageChunk', evidence.image_chunk_ids?.join(', ') || '--'],
                 ].map(([label, value]) => (
-                  <div key={label} className="grid grid-cols-[90px_minmax(0,1fr)] gap-3">
+                  <div
+                    key={label}
+                    className="grid grid-cols-[90px_minmax(0,1fr)] gap-3"
+                  >
                     <dt className="text-text-secondary">{label}</dt>
-                    <dd><code className="break-all text-[11px]">{value}</code></dd>
+                    <dd>
+                      <code className="break-all text-[11px]">{value}</code>
+                    </dd>
                   </div>
                 ))}
               </dl>

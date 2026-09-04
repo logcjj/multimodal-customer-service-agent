@@ -1,8 +1,8 @@
 {
-  "name": "aka-sentinel-ragflow-ui",
+  "name": "multimodal-customer-service-agent-ui",
   "version": "0.7.0",
   "private": true,
-  "description": "AKA Sentinel Multi-Agent workbench on the RAGFlow Web UI foundation",
+  "description": "Multimodal customer-service agent workbench on the RAGFlow Web UI foundation",
   "author": "bill",
   "type": "module",
   "scripts": {

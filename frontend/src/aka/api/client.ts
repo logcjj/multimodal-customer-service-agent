@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/runtime-paths';
 import type {
   AgentDefinition,
   AgentResponse,
@@ -47,14 +48,12 @@ function waitForRetry(delayMs: number) {
   });
 }
 
-async function openChatStream(
-  payload: {
-    question: string;
-    images: string[];
-    session_id?: string;
-    user_id?: string;
-  },
-): Promise<Response> {
+async function openChatStream(payload: {
+  question: string;
+  images: string[];
+  session_id?: string;
+  user_id?: string;
+}): Promise<Response> {
   let lastFailure: Error | undefined;
 
   for (
@@ -63,7 +62,7 @@ async function openChatStream(
     attempt += 1
   ) {
     try {
-      const response = await fetch('/api/chat/stream', {
+      const response = await fetch(apiUrl('/api/chat/stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -89,7 +88,7 @@ async function openChatStream(
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers:
       init?.body && !isFormData
@@ -201,11 +200,7 @@ export const api = {
       `/api/conversations?user_id=${encodeURIComponent(userId)}`,
       { method: 'POST', body: JSON.stringify(payload) },
     ),
-  renameConversation: (
-    conversationId: string,
-    userId: string,
-    title: string,
-  ) =>
+  renameConversation: (conversationId: string, userId: string, title: string) =>
     request<ConversationSummary>(
       `/api/conversations/${encodeURIComponent(conversationId)}?user_id=${encodeURIComponent(userId)}`,
       { method: 'PATCH', body: JSON.stringify({ title }) },
@@ -260,9 +255,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   traces: (userId: string) =>
-    request<AgentTrace[]>(
-      `/api/traces?user_id=${encodeURIComponent(userId)}`,
-    ),
+    request<AgentTrace[]>(`/api/traces?user_id=${encodeURIComponent(userId)}`),
   files: () => request<FileAsset[]>('/api/files'),
   uploadFile: (file: File) => {
     const body = new FormData();

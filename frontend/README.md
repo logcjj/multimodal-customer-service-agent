@@ -1,8 +1,7 @@
-# AKA Sentinel frontend
+# Multimodal Customer Service Agent frontend
 
-The frontend is a React and TypeScript operations workspace. AKA-specific
-pages and components live under `src/aka`; shared UI foundations include code
-adapted from RAGFlow.
+这是一个 React + TypeScript 客服运营工作台。项目页面和组件位于
+`src/aka`，共享 UI 基础包含基于 RAGFlow 改造的代码。
 
 ## Development
 

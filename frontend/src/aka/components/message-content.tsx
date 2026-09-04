@@ -1,3 +1,4 @@
+import { apiUrl } from '@/lib/runtime-paths';
 import { Fragment } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,7 +11,7 @@ interface MessageContentProps {
 }
 
 function assetUrl(assetId: string) {
-  return `/api/assets/${encodeURIComponent(assetId)}`;
+  return apiUrl(`/api/assets/${encodeURIComponent(assetId)}`);
 }
 
 function AnswerAsset({ assetId, index }: { assetId: string; index: number }) {
