@@ -13,6 +13,10 @@
 </p>
 
 <p align="center">
+  <a href="https://logcjj.github.io/multimodal-customer-service-agent/">在线预览（GitHub Pages）</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/logcjj/multimodal-customer-service-agent/actions/workflows/deploy-pages.yml"><img src="https://github.com/logcjj/multimodal-customer-service-agent/actions/workflows/deploy-pages.yml/badge.svg" alt="Deploy frontend"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white" alt="Python 3.13+"></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI"></a>
